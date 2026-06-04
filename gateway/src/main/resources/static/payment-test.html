@@ -647,15 +647,6 @@
             <button class="theme-toggle-btn" style="box-shadow: none;" onclick="fetchWalletInfo()">새로고침</button>
         </div>
 
-        <!-- Quick Refund Action Area -->
-        <div id="quick-refund-container" style="display: none; margin-top: -12px; margin-bottom: 20px; background: var(--bg-3); border: 1px dashed var(--border-2); border-radius: var(--radius-md); padding: 12px 16px; align-items: center; justify-content: space-between; font-size: 0.9rem; animation: cardFadeIn 0.3s ease;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-                <span>💸 최근 결제건:</span>
-                <strong id="quick-refund-desc" style="color: var(--primary);">별조각 100개</strong>
-            </div>
-            <button class="refund-btn" id="btn-quick-refund" style="padding: 6px 12px; font-weight: 700;">즉시 환불</button>
-        </div>
-
         <div class="form-group">
             <label>충전 상품 선택</label>
             
@@ -687,21 +678,6 @@
         <button class="btn" style="margin-top: var(--space-4);" onclick="requestPayment()">
             선택한 상품 결제하기 (토스페이먼츠)
         </button>
-
-        <!-- Manual Refund Form
-        <div style="margin-top: var(--space-6); background: var(--bg-3); border: 1px solid var(--border-2); border-radius: var(--radius-md); padding: var(--space-4);">
-            <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                <span>⚙️ 수동 결제 취소/환불</span>
-            </div>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <input type="text" id="input-refund-order-no" placeholder="환불할 주문 번호 (order_...) 입력" style="flex: 1; padding: 10px 14px; font-size: 0.88rem;">
-                <button class="refund-btn" onclick="submitManualRefund()" style="padding: 10px 16px; font-size: 0.88rem; font-weight: 700; white-space: nowrap; border-radius: var(--radius-sm);">환불하기</button>
-            </div>
-            <div style="font-size: 0.78rem; color: var(--fg-3); line-height: 1.4;">
-                * 지갑 거래내역에 표시된 주문 번호(예: order_171...)를 복사하여 입력한 뒤 환불하기 버튼을 누르면 해당 결제가 취소 및 환불 처리됩니다.
-            </div>
-        </div>
-        -->
 
         <!-- Ledger History -->
         <div class="ledger-section">
@@ -992,28 +968,10 @@
                 if (data.success) {
                     const items = data.data.items;
                     const container = document.getElementById("ledger-list");
-                    const quickRefundContainer = document.getElementById("quick-refund-container");
-                    
-                    // 최근 결제건 퀵 환불 초기화
-                    if (quickRefundContainer) {
-                        quickRefundContainer.style.display = "none";
-                    }
 
                     if (items.length === 0) {
                         container.innerHTML = `<div class="ledger-item" style="color: var(--fg-3); justify-content: center;">거래 내역이 존재하지 않습니다.</div>`;
                         return;
-                    }
-
-                    // 가장 최신 거래가 환불 가능한 충전 거래인지 체크
-                    const latestTx = items[0];
-                    if (latestTx && latestTx.reason === "PAYMENT_CHARGE" && latestTx.refType === "PAYMENT_ORDER" && quickRefundContainer) {
-                        const orderNo = latestTx.idempotencyKey ? latestTx.idempotencyKey.replace("PAYMENT:", "") : "";
-                        if (orderNo) {
-                            document.getElementById("quick-refund-desc").innerText = `${latestTx.description} (${latestTx.amount}개)`;
-                            const btnRefund = document.getElementById("btn-quick-refund");
-                            btnRefund.onclick = () => requestRefund(orderNo);
-                            quickRefundContainer.style.display = "flex";
-                        }
                     }
 
                     container.innerHTML = items.map(tx => {
@@ -1021,15 +979,7 @@
                         const badgeClass = tx.amount > 0 ? 'ledger-badge-plus' : 'ledger-badge-minus';
                         const date = new Date(tx.occurredAt).toLocaleString();
                         
-                        // 환불 가능 버튼 노출 분기 (충전 거래이면서 reason이 PAYMENT_CHARGE인 경우 환불 기능 제공 가능)
                         let actionHtml = `<span class="ledger-badge ${badgeClass}">${amountStr}</span>`;
-                        if (tx.reason === "PAYMENT_CHARGE" && tx.refType === "PAYMENT_ORDER") {
-                            // 로컬 지갑 충전 주문 번호를 orderNo로 가져오기 위한 멱등키 활용
-                            const orderNo = tx.idempotencyKey ? tx.idempotencyKey.replace("PAYMENT:", "") : "";
-                            if (orderNo) {
-                                actionHtml = `<button class="refund-btn" onclick="requestRefund('${orderNo}')">즉시 환불</button>`;
-                            }
-                        }
 
                         return `
                             <div class="ledger-item">
@@ -1149,47 +1099,7 @@
         }
     }
 
-    // 환불 요청
-    async function requestRefund(orderNo) {
-        const reason = prompt("환불 사유를 입력하세요:", "테스트 대시보드 즉시 환불");
-        if (reason === null) return;
 
-        try {
-            const res = await fetch("/api/payment/v1/refunds", {
-                method: "POST",
-                headers: getHeaders(),
-                body: JSON.stringify({
-                    orderNo: orderNo,
-                    reason: reason
-                })
-            });
-
-            const data = await res.json();
-            if (data.success) {
-                showGlobalAlert("success", "성공적으로 환불 및 차감이 완결되었습니다.");
-                await fetchWalletInfo();
-                await fetchLedger();
-            } else {
-                showGlobalAlert("error", "환불 신청 실패: " + data.error.message);
-            }
-        } catch (e) {
-            showGlobalAlert("error", "환불 통신 오류: " + e.message);
-        }
-    }
-
-    /*
-    // 수동 환불 제출
-    async function submitManualRefund() {
-        const orderNo = document.getElementById("input-refund-order-no").value.trim();
-        if (!orderNo) {
-            showGlobalAlert("error", "환불할 주문 번호(Order No)를 입력해 주세요.");
-            return;
-        }
-
-        await requestRefund(orderNo);
-        document.getElementById("input-refund-order-no").value = ""; // 입력창 비우기
-    }
-    */
 
     // 로그아웃
     function logoutSession() {

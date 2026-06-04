@@ -32,6 +32,7 @@ public class PaymentService {
     private final PaymentOrderRepository orderRepository;
     private final PaymentTransactionRepository transactionRepository;
     private final WalletService walletService;
+    private final PaymentTxHelper paymentTxHelper;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -66,7 +67,6 @@ public class PaymentService {
     /**
      * 결제 완료 처리 및 검증
      */
-    @Transactional
     public int completePayment(Long userId, String paymentId, String orderNo) {
         PaymentOrder order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new UserException(UserErrorCode.PAYMENT_ORDER_NOT_FOUND));
@@ -88,7 +88,7 @@ public class PaymentService {
 
         if (!mockMode) {
             try {
-                // 포트원 V2 결제 상세 조회 API 호출
+                // 포트원 V2 결제 상세 조회 API 호출 (트랜잭션 외부에서 수행)
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create("https://api.portone.io/payments/" + paymentId))
                         .header("Authorization", "PortOne " + apiSecret)
@@ -134,30 +134,8 @@ public class PaymentService {
             log.info("[MOCK MODE] Payment verification bypassed for orderNo={}", orderNo);
         }
 
-        // 주문 상태 업데이트 및 거래 기록
-        order.updateStatus(PaymentStatus.PAID);
-        orderRepository.save(order);
-
-        PaymentTransaction transaction = PaymentTransaction.builder()
-                .paymentOrderId(order.getId())
-                .paymentId(paymentId)
-                .pgProvider(pgProvider)
-                .payMethod(payMethod)
-                .paidAt(LocalDateTime.now())
-                .build();
-        transactionRepository.save(transaction);
-
-        // 지갑 충전
-        walletService.earnStarPiece(
-                userId,
-                order.getStarPieces(),
-                "PAYMENT_CHARGE",
-                "PAYMENT_ORDER",
-                order.getId(),
-                "PAYMENT:" + orderNo
-        );
-
-        return walletService.getMyWallet(userId).getStarPiece();
+        // 포트원 결제 검증 통과 완료 -> 단일 로컬 DB 트랜잭션으로 원자적 쓰기 위임
+        return paymentTxHelper.writePaymentApproval(userId, orderNo, paymentId, pgProvider, payMethod);
     }
 
     /**
