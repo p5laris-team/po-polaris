@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polaris 별조각 충전소 (테스트)</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+    <!-- Portone SDK -->
+    <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
+    
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-primary: #818cf8;
+            --accent-hover: #4f46e5;
+            --accent-success: #34d399;
+            --accent-danger: #f87171;
+            --font-outfit: 'Outfit', 'Noto Sans KR', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-outfit);
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Glassmorphism Card Style */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 15px 40px rgba(129, 140, 248, 0.1);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #a5b4fc, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        input, select {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+            color: var(--text-primary);
+            font-family: var(--font-outfit);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+        }
+
+        /* Buttons */
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 10px;
+            padding: 0.8rem 1.5rem;
+            font-family: var(--font-outfit);
+            font-size: 0.95rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(148, 163, 184, 0.25);
+        }
+
+        .btn-success {
+            background: var(--accent-success);
+            color: #0f172a;
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--accent-danger);
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            border-radius: 6px;
+        }
+
+        .btn-danger:hover {
+            background: var(--accent-danger);
+            color: white;
+        }
+
+        /* Balance Info Layout */
+        .balance-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(192, 132, 252, 0.15) 100%);
+            border: 1px solid rgba(129, 140, 248, 0.2);
+        }
+
+        .balance-title {
+            font-size: 1.1rem;
+            color: #c7d2fe;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .balance-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #f5f3ff;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .balance-value span {
+            font-size: 1.2rem;
+            color: #a78bfa;
+            font-weight: 400;
+        }
+
+        /* Alert notifications */
+        .alert {
+            padding: 1rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .alert-success {
+            background: rgba(52, 211, 153, 0.15);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            color: var(--accent-success);
+        }
+
+        .alert-danger {
+            background: rgba(248, 113, 113, 0.15);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--accent-danger);
+        }
+
+        /* Lists */
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #e2e8f0;
+            border-left: 4px solid var(--accent-primary);
+            padding-left: 0.6rem;
+        }
+
+        .list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .list-item {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        .item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .item-title {
+            font-weight: 600;
+        }
+
+        .item-sub {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .item-action {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .badge {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .badge-success {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--accent-success);
+        }
+
+        .badge-danger {
+            background: rgba(248, 113, 113, 0.2);
+            color: var(--accent-danger);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 3px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Polaris 별조각 충전소</h1>
+        <p>포트원 토스페이먼츠 연동 로컬 테스트 페이지</p>
+    </header>
+
+    <!-- 1. JWT 토큰 설정 카드 -->
+    <div class="card">
+        <div class="section-title">1. 사용자 토큰 발급</div>
+        <div class="form-group">
+            <label for="token-input">JWT Authorization Token</label>
+            <div class="input-wrapper">
+                <input type="text" id="token-input" placeholder="Bearer 토큰을 입력하거나 아래 버튼을 누르세요.">
+                <button class="btn btn-primary" onclick="generateTestToken()">토큰 자동 발급</button>
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="user-id-select">대상 테스트 유저 ID</label>
+            <select id="user-id-select" onchange="generateTestToken()">
+                <option value="1">유저 ID: 1</option>
+                <option value="2">유저 ID: 2</option>
+                <option value="3">유저 ID: 3</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 2. 지갑 잔액 카드 -->
+    <div class="card balance-card">
+        <div class="balance-info">
+            <div class="balance-title">✨ 현재 보유 중인 별조각</div>
+            <div class="balance-value" id="star-piece-count">0 <span>조각</span></div>
+        </div>
+        <div>
+            <button class="btn btn-secondary" onclick="fetchWalletInfo()">새로고침</button>
+        </div>
+    </div>
+
+    <!-- 3. 결제 요청 카드 -->
+    <div class="card">
+        <div class="section-title">2. 별조각 결제 충전</div>
+        
+        <div class="alert alert-success" id="payment-alert-success">결제가 정상 완료되었습니다.</div>
+        <div class="alert alert-danger" id="payment-alert-error">오류가 발생했습니다.</div>
+        
+        <div class="form-group" style="margin-top: 1rem;">
+            <label for="star-pieces-input">충전할 별조각 개수</label>
+            <input type="number" id="star-pieces-input" value="100" min="1">
+        </div>
+        <div class="form-group">
+            <label for="amount-input">결제 금액 (원화 KRW)</label>
+            <input type="number" id="amount-input" value="1000" min="100">
+        </div>
+        
+        <button class="btn btn-success" onclick="requestPayment()">
+            별조각 결제하기 (토스페이먼츠)
+        </button>
+    </div>
+
+    <!-- 4. 로컬 결제 내역 (환불용) -->
+    <div class="card">
+        <div class="section-title">3. 내 결제 내역 (즉시 환불 테스트)</div>
+        <div class="list-container" id="local-order-list">
+            <div class="list-item" style="color: var(--text-secondary); justify-content: center;">
+                결제된 이력이 없습니다.
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. 서버 거래내역 조회 -->
+    <div class="card">
+        <div class="section-title">4. 실시간 지갑 거래내역 (Server Ledger)</div>
+        <div class="list-container" id="ledger-list">
+            <div class="list-item" style="color: var(--text-secondary); justify-content: center;">
+                거래내역이 존재하지 않습니다.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 상태 변수
+    let storeId = "";
+    let channelId = "";
+    let accessToken = localStorage.getItem("test_access_token") || "";
+
+    // 화면 로드 시 초기화
+    document.addEventListener("DOMContentLoaded", async () => {
+        if (accessToken) {
+            document.getElementById("token-input").value = accessToken;
+            await fetchWalletInfo();
+            await fetchLedger();
+        }
+        await loadConfig();
+        renderLocalOrders();
+    });
+
+    // 1. 공통 설정정보 로드
+    async function loadConfig() {
+        try {
+            const res = await fetch("/api/payment/v1/config", {
+                headers: getHeaders()
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    storeId = data.data.storeId;
+                    channelId = data.data.channelId;
+                    console.log("포트원 연동 로드 완료. Store ID:", storeId, "Channel ID:", channelId);
+                }
+            }
+        } catch (e) {
+            console.error("포트원 설정 정보 조회 실패", e);
+        }
+    }
+
+    // 2. 공통 헤더 생성
+    function getHeaders() {
+        return {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+        };
+    }
+
+    // 3. 테스트 토큰 자동 발급
+    async function generateTestToken() {
+        const userId = document.getElementById("user-id-select").value;
+        try {
+            const res = await fetch(`/api/auth/v1/test/token?userId=${userId}`);
+            const data = await res.json();
+            if (data.success) {
+                accessToken = data.data.accessToken;
+                document.getElementById("token-input").value = accessToken;
+                localStorage.setItem("test_access_token", accessToken);
+                showAlert("payment-alert-success", `유저 ID ${userId}번 테스트 토큰이 자동 설정되었습니다.`);
+                await fetchWalletInfo();
+                await fetchLedger();
+                await loadConfig();
+            } else {
+                showAlert("payment-alert-error", "토큰 발급 실패: " + data.error.message);
+            }
+        } catch (e) {
+            showAlert("payment-alert-error", "토큰 발급 실패: " + e.message);
+        }
+    }
+
+    // 4. 지갑 정보 조회
+    async function fetchWalletInfo() {
+        if (!accessToken) return;
+        try {
+            const res = await fetch("/api/wallet/v1/wallets/me", {
+                headers: getHeaders()
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById("star-piece-count").innerHTML = `${data.data.starPiece} <span>조각</span>`;
+                }
+            }
+        } catch (e) {
+            console.error("지갑 조회 실패", e);
+        }
+    }
+
+    // 5. 서버 거래내역 조회
+    async function fetchLedger() {
+        if (!accessToken) return;
+        try {
+            const res = await fetch("/api/wallet/v1/wallets/me/transactions?size=10", {
+                headers: getHeaders()
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    const items = data.data.items;
+                    const container = document.getElementById("ledger-list");
+                    if (items.length === 0) {
+                        container.innerHTML = `<div class="list-item" style="color: var(--text-secondary); justify-content: center;">거래내역이 존재하지 않습니다.</div>`;
+                        return;
+                    }
+                    container.innerHTML = items.map(tx => {
+                        const amountStr = tx.amount > 0 ? `+${tx.amount}` : `${tx.amount}`;
+                        const badgeClass = tx.amount > 0 ? 'badge-success' : 'badge-danger';
+                        const date = new Date(tx.occurredAt).toLocaleString();
+                        return `
+                            <div class="list-item">
+                                <div class="item-info">
+                                    <div class="item-title">${tx.description}</div>
+                                    <div class="item-sub">${date} | 잔액: ${tx.balanceAfter}조각</div>
+                                </div>
+                                <div class="item-action">
+                                    <span class="badge ${badgeClass}">${amountStr}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join("");
+                }
+            }
+        } catch (e) {
+            console.error("거래내역 조회 실패", e);
+        }
+    }
+
+    // 6. 결제 요청 진행
+    async function requestPayment() {
+        if (!accessToken) {
+            showAlert("payment-alert-error", "먼저 테스트 토큰을 발급받으세요.");
+            return;
+        }
+
+        const starPieces = parseInt(document.getElementById("star-pieces-input").value);
+        const amount = parseInt(document.getElementById("amount-input").value);
+
+        if (isNaN(starPieces) || starPieces <= 0) {
+            showAlert("payment-alert-error", "충전할 별조각 수량이 유효하지 않습니다.");
+            return;
+        }
+        if (isNaN(amount) || amount < 100) {
+            showAlert("payment-alert-error", "최소 결제 금액은 100원입니다.");
+            return;
+        }
+
+        try {
+            // 1) 우리 백엔드에 결제 주문 생성 요청 (READY)
+            const orderRes = await fetch("/api/payment/v1/orders", {
+                method: "POST",
+                headers: getHeaders(),
+                body: JSON.stringify({ amount, starPieces })
+            });
+
+            const orderData = await orderRes.json();
+            if (!orderData.success) {
+                showAlert("payment-alert-error", "주문 생성 실패: " + orderData.error.message);
+                return;
+            }
+
+            const orderNo = orderData.data.orderNo;
+            
+            // 2) 브라우저 포트원 결제창 요청 (토스페이먼츠 테스트)
+            if (!window.IMP) {
+                showAlert("payment-alert-error", "포트원 SDK가 로드되지 않았습니다.");
+                return;
+            }
+
+            // 가맹점 식별코드 초기화
+            const activeStoreId = storeId || "imp00000000"; // 기본 dummy 식별코드 제공
+            IMP.init(activeStoreId);
+
+            const paymentData = {
+                pg: channelId ? channelId : "tosspayments.TSTEST", // 포트원 채널 ID 혹은 토스페이먼츠 기본 테스트 ID
+                pay_method: "card",
+                merchant_uid: orderNo,
+                name: `별조각 ${starPieces}개 충전`,
+                amount: amount,
+                buyer_email: "test-buyer@p5laris.life",
+                buyer_name: "테스트구매자",
+                buyer_tel: "010-1234-5678"
+            };
+
+            console.log("포트원 결제 팝업 요청 데이터:", paymentData);
+
+            IMP.request_pay(paymentData, async function (rsp) {
+                if (rsp.success || rsp.imp_uid) {
+                    const paymentId = rsp.imp_uid || "mock_payment_id_" + Date.now();
+                    
+                    // 3) 백엔드에 결제 완료 검증 및 업데이트 요청
+                    try {
+                        const completeRes = await fetch("/api/payment/v1/completes", {
+                            method: "POST",
+                            headers: getHeaders(),
+                            body: JSON.stringify({
+                                paymentId: paymentId,
+                                orderNo: orderNo
+                            })
+                        });
+
+                        const completeData = await completeRes.json();
+                        if (completeData.success) {
+                            showAlert("payment-alert-success", `결제가 정상 승인되었습니다! (별조각 +${starPieces})`);
+                            
+                            // 로컬 결제 목록에 추가
+                            addLocalOrder({
+                                orderNo,
+                                amount,
+                                starPieces,
+                                date: new Date().toLocaleString(),
+                                status: "PAID"
+                            });
+
+                            await fetchWalletInfo();
+                            await fetchLedger();
+                        } else {
+                            showAlert("payment-alert-error", "결제 승인 실패: " + completeData.error.message);
+                        }
+                    } catch (err) {
+                        showAlert("payment-alert-error", "결제 검증 API 호출 실패: " + err.message);
+                    }
+                } else {
+                    showAlert("payment-alert-error", "결제가 취소되었습니다: " + rsp.error_msg);
+                }
+            });
+
+        } catch (e) {
+            showAlert("payment-alert-error", "결제 요청 중 오류: " + e.message);
+        }
+    }
+
+    // 7. 결제 환불 요청
+    async function requestRefund(orderNo) {
+        if (!accessToken) return;
+        
+        const reason = prompt("환불 사유를 입력하세요:", "테스트 결제 환불");
+        if (reason === null) return; // 취소 버튼
+
+        try {
+            const res = await fetch("/api/payment/v1/refunds", {
+                method: "POST",
+                headers: getHeaders(),
+                body: JSON.stringify({
+                    orderNo: orderNo,
+                    reason: reason
+                })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                showAlert("payment-alert-success", "성공적으로 환불 및 차감이 처리되었습니다.");
+                
+                // 로컬 내역 상태 업데이트
+                updateLocalOrderStatus(orderNo, "CANCELLED");
+                await fetchWalletInfo();
+                await fetchLedger();
+            } else {
+                showAlert("payment-alert-error", "환불 실패: " + data.error.message);
+            }
+        } catch (e) {
+            showAlert("payment-alert-error", "환불 요청 오류: " + e.message);
+        }
+    }
+
+    // 로컬 스토리지 결제 내역 헬퍼 함수들
+    function getLocalOrders() {
+        const list = localStorage.getItem("local_orders");
+        return list ? JSON.parse(list) : [];
+    }
+
+    function addLocalOrder(order) {
+        const list = getLocalOrders();
+        list.unshift(order); // 최신 순
+        localStorage.setItem("local_orders", JSON.stringify(list));
+        renderLocalOrders();
+    }
+
+    function updateLocalOrderStatus(orderNo, status) {
+        const list = getLocalOrders();
+        const found = list.find(o => o.orderNo === orderNo);
+        if (found) {
+            found.status = status;
+            localStorage.setItem("local_orders", JSON.stringify(list));
+        }
+        renderLocalOrders();
+    }
+
+    function renderLocalOrders() {
+        const list = getLocalOrders();
+        const container = document.getElementById("local-order-list");
+        if (list.length === 0) {
+            container.innerHTML = `<div class="list-item" style="color: var(--text-secondary); justify-content: center;">결제된 이력이 없습니다.</div>`;
+            return;
+        }
+
+        container.innerHTML = list.map(order => {
+            const isPaid = order.status === "PAID";
+            const statusText = isPaid ? "결제 완료" : "환불 완료";
+            const statusBadgeClass = isPaid ? "badge-success" : "badge-danger";
+            const actionButton = isPaid 
+                ? `<button class="btn btn-danger" onclick="requestRefund('${order.orderNo}')">환불하기</button>`
+                : `<span class="badge badge-danger">환불 완료</span>`;
+
+            return `
+                <div class="list-item">
+                    <div class="item-info">
+                        <div class="item-title">별조각 ${order.starPieces}개 충전 (${order.amount}원)</div>
+                        <div class="item-sub">주문번호: ${order.orderNo}</div>
+                        <div class="item-sub">결제일시: ${order.date}</div>
+                    </div>
+                    <div class="item-action">
+                        <span class="badge ${statusBadgeClass}">${statusText}</span>
+                        ${actionButton}
+                    </div>
+                </div>
+            `;
+        }).join("");
+    }
+
+    // 알림 표시 헬퍼
+    function showAlert(id, message) {
+        const alert = document.getElementById(id);
+        alert.innerText = message;
+        alert.style.display = "flex";
+        
+        // 다른 알림은 숨기기
+        const otherId = id === "payment-alert-success" ? "payment-alert-error" : "payment-alert-success";
+        document.getElementById(otherId).style.display = "none";
+
+        setTimeout(() => {
+            alert.style.display = "none";
+        }, 5000);
+    }
+</script>
+</body>
+</html>

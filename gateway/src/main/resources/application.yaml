@@ -88,3 +88,7 @@ ad:
     bottom-web-slot-id: ${ADSENSE_BOTTOM_WEB_SLOT_ID:}
     refresh-seconds: ${ADSENSE_BANNER_REFRESH_SECONDS:60}
     reserved-height-px: ${ADSENSE_BANNER_RESERVED_HEIGHT_PX:64}
+
+portone:
+  store-id: ${PORTONE_STORE_ID}
+  channel-id: ${PORTONE_CHANNEL_ID}

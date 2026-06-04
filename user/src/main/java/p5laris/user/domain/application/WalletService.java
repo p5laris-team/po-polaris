@@ -139,6 +139,8 @@ public class WalletService {
                         yield "아이템 구매";
                     }
                     case "SHARE_REWARD" -> "공유 보상";
+                    case "PAYMENT_CHARGE" -> "별조각 결제 충전";
+                    case "PAYMENT_REFUND" -> "결제 환불";
                     default -> tx.getReason();
                 };
             }
