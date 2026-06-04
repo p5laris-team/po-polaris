@@ -1,0 +1,25 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'p5laris'
+
+include 'proto'
+include 'gateway'
+include 'user'
+include 'character'
+include 'item'
+include 'mission'
+include 'ai'
+include 'notification'
+include 'event-log'

@@ -1,0 +1,132 @@
+server:
+  port: ${SERVER_PORT}
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
+  application:
+    name: ai
+
+  ai:
+    model:
+      chat: ${SPRING_AI_MODEL_CHAT}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: ${AI_PROVIDER_MODEL}
+            response-mime-type: ${AI_PROVIDER_RESPONSE_MIME_TYPE}
+            temperature: ${AI_PROVIDER_TEMPERATURE}
+            max-output-tokens: ${AI_PROVIDER_MAX_OUTPUT_TOKENS}
+            thinking-budget: ${AI_PROVIDER_THINKING_BUDGET}
+            include-thoughts: ${AI_PROVIDER_INCLUDE_THOUGHTS}
+        embedding:
+          api-key: ${GEMINI_API_KEY}
+          text:
+            options:
+              model: ${AI_EMBEDDING_MODEL}
+              dimensions: ${AI_EMBEDDING_DIMENSION}
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      timeout: ${REDIS_TIMEOUT}
+
+  datasource:
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
+grpc:
+  default-deadline-ms: 3000
+  server:
+    port: ${GRPC_SERVER_PORT}
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
+
+  client:
+    user:
+      address: ${USER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    character:
+      address: ${CHARACTER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    item:
+      address: ${ITEM_GRPC_ADDRESS}
+      negotiationType: plaintext
+    mission:
+      address: ${MISSION_GRPC_ADDRESS}
+      negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+
+ai:
+  provider:
+    enabled: ${AI_PROVIDER_ENABLED}
+    type: ${AI_PROVIDER_TYPE}
+    model: ${AI_PROVIDER_MODEL}
+  embedding:
+    enabled: ${AI_EMBEDDING_ENABLED}
+    model: ${AI_EMBEDDING_MODEL}
+    dimension: ${AI_EMBEDDING_DIMENSION}
+  rate-limit:
+    enabled: ${AI_RATE_LIMIT_ENABLED}
+    backend: ${AI_RATE_LIMIT_BACKEND}
+    provider-requests-per-minute: ${AI_RATE_LIMIT_PROVIDER_REQUESTS_PER_MINUTE}
+    user-requests-per-minute: ${AI_RATE_LIMIT_USER_REQUESTS_PER_MINUTE}
+    window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS}
+    key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS}
+    fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED}
+  circuit-breaker:
+    enabled: ${AI_CIRCUIT_BREAKER_ENABLED}
+    sliding-window-size: ${AI_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE}
+    minimum-number-of-calls: ${AI_CIRCUIT_BREAKER_MINIMUM_NUMBER_OF_CALLS}
+    failure-rate-threshold: ${AI_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD}
+    slow-call-duration-ms: ${AI_CIRCUIT_BREAKER_SLOW_CALL_DURATION_MS}
+    slow-call-rate-threshold: ${AI_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD}
+    wait-duration-open-ms: ${AI_CIRCUIT_BREAKER_WAIT_DURATION_OPEN_MS}
+  character-talk:
+    max-user-message-length: ${AI_CHARACTER_TALK_MAX_USER_MESSAGE_LENGTH:300}
+    max-reply-length: ${AI_CHARACTER_TALK_MAX_REPLY_LENGTH:350}
+    tool-deadline-ms: ${AI_CHARACTER_TALK_TOOL_DEADLINE_MS:2500}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

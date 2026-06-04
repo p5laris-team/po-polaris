@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package p5laris.ai.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.ai.v1";
+option java_outer_classname = "AiProto";
+
+service AiService {
+  rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GenerateMissionTexts(GenerateMissionTextsRequest) returns (GenerateMissionTextsResponse);
+  rpc GenerateTextEmbedding(GenerateTextEmbeddingRequest) returns (GenerateTextEmbeddingResponse);
+  rpc StreamCharacterTalk(StreamCharacterTalkRequest) returns (stream StreamCharacterTalkResponse);
+}
+
+message PingPongRequest {
+  string message = 1;
+}
+
+message PingPongResponse {
+  HealthStatus health_status = 1;
+  string message = 2;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}
+
+message GenerateMissionTextsRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string character_type = 3;
+  int64 mission_template_id = 4;
+  string base_title = 5;
+  string base_description = 6;
+  string category = 7;
+  string difficulty = 8;
+  string fallback_character_message = 9;
+  string fallback_question = 10;
+  string fallback_completion_response = 11;
+  string onboarding_context_json = 12;
+  string recent_mission_context_json = 13;
+  string request_id = 14;
+}
+
+message GenerateMissionTextsResponse {
+  int64 ai_generation_id = 1;
+  AiGenerationStatus status = 2;
+  string character_message = 3;
+  string completion_question = 4;
+  string completion_character_response = 5;
+  bool fallback_used = 6;
+  AiErrorType error_type = 7;
+  string request_id = 8;
+  string title = 9;
+  string description = 10;
+  string category = 11;
+  string difficulty = 12;
+}
+
+message GenerateTextEmbeddingRequest {
+  int64 user_id = 1;
+  string text = 2;
+  string model = 3;
+  int32 dimension = 4;
+  string request_id = 5;
+}
+
+message GenerateTextEmbeddingResponse {
+  string model = 1;
+  int32 dimension = 2;
+  repeated float values = 3;
+  string request_id = 4;
+}
+
+message StreamCharacterTalkRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string character_type = 3;
+  string character_name = 4;
+  string user_message = 5;
+  string interaction_type = 6;
+  string character_context_json = 7;
+  string request_id = 8;
+}
+
+message StreamCharacterTalkResponse {
+  CharacterTalkStreamEventType event_type = 1;
+  string text = 2;
+  bool fallback_used = 3;
+  AiErrorType error_type = 4;
+  string request_id = 5;
+}
+
+enum CharacterTalkStreamEventType {
+  CHARACTER_TALK_STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA = 1;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_DONE = 2;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR = 3;
+}
+
+enum AiGenerationStatus {
+  AI_GENERATION_STATUS_UNSPECIFIED = 0;
+  AI_GENERATION_STATUS_SUCCESS = 1;
+  AI_GENERATION_STATUS_FALLBACK = 2;
+  AI_GENERATION_STATUS_FAILED = 3;
+}
+
+enum AiErrorType {
+  AI_ERROR_TYPE_UNSPECIFIED = 0;
+  AI_ERROR_TYPE_TIMEOUT = 1;
+  AI_ERROR_TYPE_RATE_LIMIT = 2;
+  AI_ERROR_TYPE_INVALID_OUTPUT = 3;
+  AI_ERROR_TYPE_POLICY_VIOLATION = 4;
+  AI_ERROR_TYPE_PROVIDER_ERROR = 5;
+  AI_ERROR_TYPE_UNKNOWN = 6;
+  AI_ERROR_TYPE_RATE_LIMIT_UNAVAILABLE = 7;
+}

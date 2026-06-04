@@ -1,0 +1,90 @@
+server:
+  port: ${SERVER_PORT}
+
+spring:
+  application:
+    name: gateway
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
+grpc:
+  default-deadline-ms: 5000
+  client:
+    user:
+      address: ${USER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    character:
+      address: ${CHARACTER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    item:
+      address: ${ITEM_GRPC_ADDRESS}
+      negotiationType: plaintext
+    mission:
+      address: ${MISSION_GRPC_ADDRESS}
+      negotiationType: plaintext
+    ai:
+      address: ${AI_GRPC_ADDRESS}
+      negotiationType: plaintext
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  endpoints:
+    web:
+      exposure:
+#        include: health,info,prometheus
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+#  health:
+#    db:
+#      enabled: true
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS}
+
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}
+  default-share-image-url: ${APP_DEFAULT_SHARE_IMAGE_URL:https://d24c6my56k1w5v.cloudfront.net/assets/share-cards/placeholder.png}
+
+gateway:
+  character-talk:
+    ai:
+      deadline-ms: ${GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS:8000}
+    context:
+      memory-limit: ${GATEWAY_CHARACTER_TALK_MEMORY_LIMIT:${AI_CHARACTER_TALK_MEMORY_LIMIT:5}}
+    sse:
+      timeout-ms: ${GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS:30000}
+    daily-limit:
+      enabled: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_ENABLED:true}
+      backend: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_BACKEND:redis}
+      daily-limit: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT:20}
+      fail-closed: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_FAIL_CLOSED:true}
+
+ad:
+  banner:
+    enabled: ${ADSENSE_BANNER_ENABLED:false}
+    client-id: ${ADSENSE_CLIENT_ID:}
+    bottom-web-slot-id: ${ADSENSE_BOTTOM_WEB_SLOT_ID:}
+    refresh-seconds: ${ADSENSE_BANNER_REFRESH_SECONDS:60}
+    reserved-height-px: ${ADSENSE_BANNER_RESERVED_HEIGHT_PX:64}

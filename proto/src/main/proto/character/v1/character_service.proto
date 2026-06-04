@@ -1,0 +1,374 @@
+syntax = "proto3";
+
+package p5laris.character.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.character.v1";
+option java_outer_classname = "CharacterProto";
+
+service CharacterService {
+  rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GetCharacterTypes(GetCharacterTypesRequest) returns (GetCharacterTypesResponse);
+  rpc GetCharacterAssets(GetCharacterAssetsRequest) returns (GetCharacterAssetsResponse);
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
+  rpc GetMyCharacter(GetMyCharacterRequest) returns (GetMyCharacterResponse);
+  rpc UpdateCharacterName(UpdateCharacterNameRequest) returns (UpdateCharacterNameResponse);
+  rpc GetCharacterStatus(GetCharacterStatusRequest) returns (GetCharacterStatusResponse);
+  rpc PerformCareAction(PerformCareActionRequest) returns (PerformCareActionResponse);
+  rpc GrantCharacterExp(GrantCharacterExpRequest) returns (GrantCharacterExpResponse);
+  rpc InteractWithCharacter(InteractWithCharacterRequest) returns (InteractWithCharacterResponse);
+  rpc GetCharacterTalkContext(GetCharacterTalkContextRequest) returns (GetCharacterTalkContextResponse);
+  rpc EquipSkin(EquipSkinRequest) returns (EquipSkinResponse);
+  rpc CreateShareCard(CreateShareCardRequest) returns (CreateShareCardResponse);
+  rpc GetShareCard(GetShareCardRequest) returns (GetShareCardResponse);
+  rpc CreateShareEvent(CreateShareEventRequest) returns (CreateShareEventResponse);
+  rpc GetShareLink(GetShareLinkRequest) returns (GetShareLinkResponse);
+  rpc RecordShareClick(RecordShareClickRequest) returns (RecordShareClickResponse);
+  rpc GetTodayShareEventStatus(GetTodayShareEventStatusRequest) returns (GetTodayShareEventStatusResponse);
+  rpc GetSharePresignedUrl(GetSharePresignedUrlRequest) returns (GetSharePresignedUrlResponse);
+}
+
+// 활성화된 캐릭터 타입을 sort_order 오름차순으로 조회한다.
+message GetCharacterTypesRequest {}
+
+message GetCharacterTypesResponse {
+  repeated CharacterTypeItem items = 1;
+}
+
+message CharacterTypeItem {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string summary = 4;
+  string sample_line = 5;
+  int32 sort_order = 6;
+}
+
+// 특정 캐릭터 타입의 상태별 에셋을 조회한다.
+message GetCharacterAssetsRequest {
+  int64 character_type_id = 1;
+}
+
+message GetCharacterAssetsResponse {
+  int64 character_type_id = 1;
+  repeated CharacterAssetItem items = 2;
+}
+
+message CharacterAssetItem {
+  string asset_type = 1;
+  string asset_url = 2;
+}
+
+// 단순 헬스체크용 ping-pong 요청이다.
+message PingPongRequest {
+  string message = 1;
+}
+
+message PingPongResponse {
+  HealthStatus health_status = 1;
+  string message = 2;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}
+
+// 유저의 활성 캐릭터를 생성한다.
+message CreateCharacterRequest {
+  int64 user_id = 1;
+  int64 character_type_id = 2;
+  string name = 3;
+}
+
+message CreateCharacterResponse {
+  int64 id = 1;
+  string name = 2;
+  string character_type_code = 3;
+  bool active = 4;
+  CharacterStates states = 5;
+  string created_at = 6;
+  CharacterGrowth growth = 7;
+}
+
+message CharacterStates {
+  int32 hunger = 1;
+  int32 energy = 2;
+  int32 affection = 3;
+}
+
+message CharacterGrowth {
+  int32 level = 1;
+  int32 exp = 2;
+  int32 current_level_exp = 3;
+  int32 next_level_exp = 4;
+  int32 exp_to_next_level = 5;
+  int32 progress_percent = 6;
+  string growth_stage = 7;
+  string growth_stage_label = 8;
+  bool max_level = 9;
+}
+
+// 유저의 현재 활성 캐릭터를 조회한다.
+message GetMyCharacterRequest {
+  int64 user_id = 1;
+}
+
+message GetMyCharacterResponse {
+  int64 id = 1;
+  string name = 2;
+  string character_type_code = 3;
+  bool active = 4;
+  int64 equipped_skin_id = 5; // 장착한 스킨이 없으면 0
+  CharacterStates states = 6;
+  string current_asset_url = 7;
+  map<string, string> asset_urls = 8;
+  CharacterGrowth growth = 9;
+}
+
+// 캐릭터 이름을 수정한다.
+message UpdateCharacterNameRequest {
+  int64 character_id = 1;
+  int64 user_id = 2; // 소유권 검증용
+  string name = 3;
+}
+
+message UpdateCharacterNameResponse {
+  int64 id = 1;
+  string name = 2;
+  string updated_at = 3;
+}
+
+// 캐릭터의 현재 상태 수치와 라벨을 조회한다.
+message GetCharacterStatusRequest {
+  int64 character_id = 1;
+  int64 user_id = 2; // 소유권 검증용
+}
+
+message GetCharacterStatusResponse {
+  int64 character_id = 1;
+  CharacterStateDetail hunger = 2;
+  CharacterStateDetail energy = 3;
+  CharacterStateDetail affection = 4;
+  CharacterGrowth growth = 5;
+}
+
+message CharacterStateDetail {
+  int32 value = 1;
+  string label = 2;
+  string grade = 3;
+}
+
+// 캐릭터 돌봄 활동(FEED/SLEEP/PLAY)을 수행한다.
+message PerformCareActionRequest {
+  int64 character_id = 1;
+  int64 user_id = 2;       // 소유권 검증용
+  string action_type = 3;  // FEED | SLEEP | PLAY
+  int64 item_id = 4;       // 사용한 아이템이 없으면 0
+  string idempotency_key = 5;
+}
+
+message PerformCareActionResponse {
+  int64 care_log_id = 1;
+  int64 character_id = 2;
+  string action_type = 3;
+  int64 consumed_item_id = 4;   // 소비한 아이템이 없으면 0
+  int32 consumed_quantity = 5;  // 소비한 아이템이 없으면 0
+  CharacterStates before_states = 6;
+  CharacterStates after_states = 7;
+  string character_message = 8;
+  CharacterGrowth before_growth = 9;
+  CharacterGrowth after_growth = 10;
+  int32 exp_gained = 11;
+  bool level_up = 12;
+}
+
+// 외부 도메인 이벤트 기준으로 캐릭터 경험치를 지급한다.
+// source_type/source_id/idempotency_key 조합으로 중복 지급을 막는다.
+message GrantCharacterExpRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string source_type = 3;
+  int64 source_id = 4;
+  int32 exp_amount = 5;
+  string idempotency_key = 6;
+}
+
+message GrantCharacterExpResponse {
+  int64 character_id = 1;
+  int32 exp_gained = 2;
+  CharacterGrowth before_growth = 3;
+  CharacterGrowth after_growth = 4;
+  bool level_up = 5;
+  bool already_processed = 6;
+}
+
+// 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+message InteractWithCharacterRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string interaction_type = 3; // TAP | LEVEL_UP | LOW_HUNGER | LOW_ENERGY | LOW_AFFECTION | NIGHT | MIDNIGHT
+}
+
+message InteractWithCharacterResponse {
+  int64 character_id = 1;
+  string character_type_code = 2;
+  int32 level = 3;
+  string fragment_type = 4;
+  string trigger_type = 5;
+  string message = 6;
+  string interpretation = 7;
+  bool memory_unlocked = 8;
+  bool already_unlocked = 9;
+  CharacterStoryMemory memory = 10;
+}
+
+message CharacterStoryMemory {
+  string memory_key = 1;
+  string title = 2;
+  string story_text = 3;
+  string fragment_type = 4;
+  int32 unlocked_level = 5;
+  string unlocked_at = 6;
+}
+
+message CharacterStoryUnlockHint {
+  int32 required_level = 1;
+  string hint_message = 2;
+}
+
+message CharacterStoryProgress {
+  int32 unlocked_memory_count = 1;
+  int32 total_memory_count = 2;
+  bool all_unlocked = 3;
+  CharacterStoryUnlockHint next_memory_hint = 4;
+}
+
+// 별친구 대화 prompt에 넣을 캐릭터 상태/성장/해금 기억 context를 조회한다.
+message GetCharacterTalkContextRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int32 memory_limit = 3;
+}
+
+message GetCharacterTalkContextResponse {
+  int64 character_id = 1;
+  string character_type_code = 2;
+  string character_name = 3;
+  CharacterStateDetail hunger = 4;
+  CharacterStateDetail energy = 5;
+  CharacterStateDetail affection = 6;
+  CharacterGrowth growth = 7;
+  repeated CharacterStoryMemory memories = 8;
+  CharacterStoryProgress story_progress = 9;
+}
+
+// 캐릭터에 스킨 아이템을 장착한다.
+message EquipSkinRequest {
+  int64 character_id = 1;
+  int64 user_id = 2;   // 소유권 검증용
+  optional int64 item_id = 3;   // 장착할 스킨 아이템, 비우면 장착 해제
+}
+
+message EquipSkinResponse {
+  int64 character_id = 1;
+  int64 equipped_skin_id = 2;
+  string updated_at = 3;
+}
+
+// 유저 캐릭터의 공유 카드를 생성한다. (명세 9.1)
+message CreateShareCardRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string headline = 3; // 공유 카드에 렌더링된 사용자 한 줄 문구
+  string image_url = 4; // 프론트에서 업로드한 공유 카드 이미지 URL
+}
+
+message CreateShareCardResponse {
+  int64 share_card_id = 1;
+  string share_id = 2;
+  string image_url = 3;
+  string share_url = 4;
+}
+
+// 소유 중인 공유 카드 상세 정보를 조회한다.
+message GetShareCardRequest {
+  int64 share_card_id = 1;
+  int64 user_id = 2; // 소유권 검증용
+}
+
+message GetShareCardResponse {
+  int64 share_card_id = 1;
+  string character_name = 2;
+  string image_url = 3;
+  string share_url = 4;
+}
+
+// 공유 이벤트를 기록하고 일일 공유 보상을 처리한다.
+message CreateShareEventRequest {
+  int64 user_id = 1;
+  int64 share_card_id = 2;
+  string platform = 3;
+  string share_type = 4;
+  string idempotency_key = 5;
+}
+
+message CreateShareEventResponse {
+  int64 share_event_id = 1;
+  bool reward_paid = 2;
+  int32 reward_star_piece = 3;
+  int32 wallet_star_piece = 4; // 갱신된 지갑 별조각, 지갑 조회 실패 시 0
+  string reward_status = 5; // PAID | PENDING | NOT_ELIGIBLE | FAILED
+}
+
+// 공개 공유 링크 정보를 조회한다.
+message GetShareLinkRequest {
+  string share_id = 1;
+}
+
+message GetShareLinkResponse {
+  string share_id = 1;
+  string character_name = 2;
+  string image_url = 3;
+  string headline = 4;
+  string signup_url = 5;
+}
+
+// 공개 공유 링크 클릭을 기록한다.
+message RecordShareClickRequest {
+  string share_id = 1;
+  string referrer = 2;
+  string utm_source = 3;
+  string utm_medium = 4;
+  string utm_campaign = 5;
+}
+
+message RecordShareClickResponse {
+  string share_id = 1;
+  bool recorded = 2;
+}
+
+// 오늘 공유 보상 상태를 조회한다.
+message GetTodayShareEventStatusRequest {
+  int64 user_id = 1;
+}
+
+message GetTodayShareEventStatusResponse {
+  bool reward_claimed = 1;
+  string last_shared_at = 2; // ISO-8601 instant, 공유한 적 없으면 빈 문자열
+  string reward_status = 3; // AVAILABLE | PAID | PENDING | FAILED
+}
+
+// 공유 카드 이미지 업로드용 presigned URL을 발급한다.
+message GetSharePresignedUrlRequest {
+  int64 user_id = 1;
+  string extension = 2; // 예: "png", "jpg"
+}
+
+message GetSharePresignedUrlResponse {
+  string presigned_url = 1; // 업로드에 사용할 임시 URL
+  string image_url = 2;     // 최종 공개 이미지 URL
+}
+

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package p5laris.user.v1;
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.user.v1";
+
+service AttendanceService {
+    rpc Attend(AttendRequest) returns (AttendResponse);
+    rpc GetAttendanceRecords(GetAttendanceRecordsRequest) returns (GetAttendanceRecordsResponse);
+}
+
+message AttendRequest {
+    int64 user_id = 1;
+}
+
+message AttendResponse {
+    AttendanceRecordDto record = 1;
+}
+
+message GetAttendanceRecordsRequest {
+    int64 user_id = 1;
+    int32 year = 2;
+    int32 month = 3;
+}
+
+message GetAttendanceRecordsResponse {
+    repeated AttendanceRecordDto records = 1;
+}
+
+message AttendanceRecordDto {
+    int64 id = 1;
+    string attendance_date = 2;
+    int32 reward_star_piece = 3;
+    int32 streak_count = 4;
+}

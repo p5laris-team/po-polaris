@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package p5laris.item.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.item.v1";
+option java_outer_classname = "ItemProto";
+
+service ItemService {
+  rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
+  rpc GetUserItems(GetUserItemsRequest) returns (GetUserItemsResponse);
+  rpc PurchaseItem(PurchaseItemRequest) returns (PurchaseItemResponse);
+  rpc UseItem(UseItemRequest) returns (UseItemResponse);
+  rpc GetSkinAssets(GetSkinAssetsRequest) returns (GetSkinAssetsResponse);
+}
+
+message PingPongRequest {
+  string message = 1;
+}
+
+message PingPongResponse {
+  HealthStatus health_status = 1;
+  string message = 2;
+}
+
+message GetItemsRequest {
+  int64 user_id = 1;
+  string item_type = 2;
+  bool active = 3;
+  string cursor = 4;
+  int32 size = 5;
+}
+
+message GetItemsResponse {
+  repeated Item items = 1;
+  PageInfo page_info = 2;
+}
+
+message Item {
+  int64  id                = 1;
+  string name              = 2;
+  string description       = 3;
+  string item_type         = 4;
+  int32  price             = 5;
+  string image_url         = 6;
+  bool   owned             = 7;
+  string effect_type       = 8;  // FOOD / REST / PLAY (소모성 아이템), SKIN이면 빈 문자열
+  int64  character_type_id = 9;  // 캐릭터 전용 스킨이면 해당 캐릭터 타입 ID, 공용이면 0
+}
+
+message GetUserItemsRequest {
+  int64 user_id = 1;
+  string item_type = 2;
+  string cursor = 3;
+  int32 size = 4;
+}
+
+message GetUserItemsResponse {
+  repeated UserItem items = 1;
+  PageInfo page_info = 2;
+}
+
+message UserItem {
+  int64  user_item_id      = 1;
+  int64  item_id           = 2;
+  string name              = 3;
+  string item_type         = 4;
+  string effect_type       = 5;
+  int32  quantity          = 6;
+  reserved 7;                    // 구 equipped 필드 번호 예약 (역호환성 보호)
+  reserved "equipped";
+  int64  character_type_id = 8;  // 캐릭터 전용 스킨이면 해당 캐릭터 타입 ID, 공용이면 0
+  string image_url         = 9;
+}
+
+message PurchaseItemRequest {
+  int64 user_id = 1;
+  int64 item_id = 2;
+  int32 quantity = 3;
+  string idempotency_key = 4;
+}
+
+message PurchaseItemResponse {
+  int64 purchase_id = 1;
+  int64 item_id = 2;
+  string name = 3;
+  int32 quantity = 4;
+  int32 price = 5;
+  int32 star_piece = 6;
+  int64 transaction_id = 7;
+}
+
+message PageInfo {
+  string next_cursor = 1;
+  bool has_next = 2;
+  int32 size = 3;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}
+
+// ── UseItem ──────────────────────────────────────────────────────────────────
+// character 모듈이 돌봄 액션 시 소모성(CONSUMABLE) 아이템 1개를 사용할 때 호출한다.
+// idempotency_key 를 통해 중복 처리를 방지한다.
+message UseItemRequest {
+  int64  user_id         = 1;
+  int64  item_id         = 2;
+  int32  quantity        = 3;  // MVP = 1
+  string ref_type        = 4;  // 사용 컨텍스트 (예: "CARE_ACTION")
+  int64  ref_id          = 5;  // 컨텍스트 PK (예: care_log_id)
+  string idempotency_key = 6;
+}
+
+message UseItemResponse {
+  int64  usage_id          = 1;  // item_usage_histories.id
+  int64  user_item_id      = 2;
+  int64  item_id           = 3;
+  int32  quantity_used     = 4;
+  int32  remaining_quantity = 5; // 사용 후 남은 수량
+}
+
+message GetSkinAssetsRequest {
+  int64 skin_item_id = 1;
+  int64 character_type_id = 2;
+}
+
+message GetSkinAssetsResponse {
+  map<string, string> asset_urls = 1;
+}
+

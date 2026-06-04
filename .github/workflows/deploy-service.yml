@@ -1,0 +1,298 @@
+name: Deploy Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "배포할 서비스다!!"
+        required: true
+        type: choice
+        options:
+          - gateway
+          - user
+          - character
+          - item
+          - mission
+          - event-log
+          - ai
+          - notification
+          - all
+          - affected
+      ref:
+        description: "배포할 브랜치 또는 커밋 SHA"
+        required: true
+        default: "main"
+      base_ref:
+        description: "affected 비교 기준 브랜치"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ACCOUNT_ID: "416170614910"
+  ECR_REGISTRY: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          if [ -f ./nx ]; then
+            chmod +x ./nx
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Prepare SSH key
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/p5laris_deploy_key
+          chmod 600 ~/.ssh/p5laris_deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Build, push, and deploy selected services
+        shell: bash
+        env:
+          SELECTED_SERVICE: ${{ inputs.service }}
+          BASE_REF: ${{ inputs.base_ref }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+
+          DEPLOY_ORDER=(
+            user
+            character
+            item
+            mission
+            event-log
+            ai
+            notification
+            gateway
+          )
+
+          resolve_service() {
+            local service="$1"
+
+            case "$service" in
+              gateway)
+                MODULE_DIR="gateway"
+                GRADLE_TASK=":gateway:bootJar"
+                IMAGE_REPO="p5laris-gateway"
+                ;;
+              user)
+                MODULE_DIR="user"
+                GRADLE_TASK=":user:bootJar"
+                IMAGE_REPO="p5laris-user"
+                ;;
+              character)
+                MODULE_DIR="character"
+                GRADLE_TASK=":character:bootJar"
+                IMAGE_REPO="p5laris-character"
+                ;;
+              item)
+                MODULE_DIR="item"
+                GRADLE_TASK=":item:bootJar"
+                IMAGE_REPO="p5laris-item"
+                ;;
+              mission)
+                MODULE_DIR="mission"
+                GRADLE_TASK=":mission:bootJar"
+                IMAGE_REPO="p5laris-mission"
+                ;;
+              event-log)
+                MODULE_DIR="event-log"
+                GRADLE_TASK=":event-log:bootJar"
+                IMAGE_REPO="p5laris-event-log"
+                ;;
+              ai)
+                MODULE_DIR="ai"
+                GRADLE_TASK=":ai:bootJar"
+                IMAGE_REPO="p5laris-ai"
+                ;;
+              notification)
+                MODULE_DIR="notification"
+                GRADLE_TASK=":notification:bootJar"
+                IMAGE_REPO="p5laris-notification"
+                ;;
+              *)
+                echo "ERROR: unknown service: $service"
+                exit 1
+                ;;
+            esac
+          }
+
+          contains_line() {
+            local needle="$1"
+            local haystack="$2"
+
+            echo "$haystack" | grep -qx "$needle"
+          }
+
+          resolve_services_to_deploy() {
+            if [ "$SELECTED_SERVICE" = "all" ]; then
+              SERVICES=("${DEPLOY_ORDER[@]}")
+              return
+            fi
+
+            if [ "$SELECTED_SERVICE" = "affected" ]; then
+              echo "== Resolve affected services =="
+              echo "Base ref: origin/$BASE_REF"
+              echo "Head ref: HEAD"
+              echo ""
+
+              git fetch origin "$BASE_REF"
+
+              RAW_AFFECTED_PROJECTS="$(
+                NX_DAEMON=false ./nx show projects --affected --base="origin/$BASE_REF" --head=HEAD
+              )"
+              
+              echo "Raw affected projects:"
+              if [ -n "$RAW_AFFECTED_PROJECTS" ]; then
+                echo "$RAW_AFFECTED_PROJECTS"
+              else
+                echo "(none)"
+              fi
+              echo ""
+              
+              AFFECTED_PROJECTS="$(
+                printf '%s\n' "$RAW_AFFECTED_PROJECTS" \
+                  | sed 's/^://g' \
+                  | grep -E '^(gateway|user|character|item|mission|event-log|ai|notification)$' \
+                  || true
+              )"
+              
+              echo "Filtered deployable affected projects:"
+              if [ -n "$AFFECTED_PROJECTS" ]; then
+                echo "$AFFECTED_PROJECTS"
+              else
+                echo "(none)"
+              fi
+              echo ""
+              
+              SERVICES=()
+              
+              for candidate in "${DEPLOY_ORDER[@]}"; do
+                if contains_line "$candidate" "$AFFECTED_PROJECTS"; then
+                  SERVICES+=("$candidate")
+                fi
+              done
+
+              return
+            fi
+
+            SERVICES=("$SELECTED_SERVICE")
+          }
+
+          deploy_one() {
+            local service="$1"
+
+            echo ""
+            echo "============================================================"
+            echo "Deploy service: $service"
+            echo "============================================================"
+
+            resolve_service "$service"
+
+            echo "Module dir  : $MODULE_DIR"
+            echo "Gradle task : $GRADLE_TASK"
+            echo "Image repo  : $IMAGE_REPO"
+            echo ""
+
+            echo "== Gradle bootJar =="
+            ./gradlew "$GRADLE_TASK"
+
+            echo ""
+            echo "== Find boot jar =="
+            JAR_FILE="$(find "$MODULE_DIR/build/libs" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.jar" \
+              ! -name "*plain.jar" \
+              | head -n 1)"
+
+            if [ -z "$JAR_FILE" ]; then
+              echo "ERROR: boot jar not found in $MODULE_DIR/build/libs"
+              exit 1
+            fi
+
+            echo "Jar file: $JAR_FILE"
+
+            IMAGE_TAG="$(git rev-parse --short HEAD)-${GITHUB_RUN_NUMBER}"
+            IMAGE_URI="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
+
+            echo ""
+            echo "== Docker build =="
+            echo "Image URI: $IMAGE_URI"
+
+            docker build \
+              --build-arg JAR_FILE="$JAR_FILE" \
+              -t "$IMAGE_URI" \
+              .
+
+            echo ""
+            echo "== Docker push =="
+            docker push "$IMAGE_URI"
+
+            echo ""
+            echo "== Deploy to server =="
+            ssh \
+              -i ~/.ssh/p5laris_deploy_key \
+              -p "$DEPLOY_PORT" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "/opt/p5laris/scripts/deploy-service.sh '$service' '$IMAGE_URI'"
+
+            echo ""
+            echo "Deploy completed: $service"
+          }
+
+          resolve_services_to_deploy
+
+          echo "Selected service: $SELECTED_SERVICE"
+          echo "Deploy order:"
+          if [ "${#SERVICES[@]}" -eq 0 ]; then
+            echo " - no deploy target"
+            echo ""
+            echo "No affected deployable service. Skip deployment."
+            exit 0
+          fi
+
+          printf ' - %s\n' "${SERVICES[@]}"
+
+          for service in "${SERVICES[@]}"; do
+            deploy_one "$service"
+          done

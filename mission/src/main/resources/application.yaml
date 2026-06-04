@@ -1,0 +1,132 @@
+server:
+  port: ${SERVER_PORT}
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
+  application:
+    name: mission
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      timeout: ${REDIS_TIMEOUT}
+      repositories:
+        enabled: false
+
+  datasource:
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+
+flyway:
+  enabled: true
+  locations: classpath:db/migration
+  baseline-on-migrate: false
+  validate-on-migrate: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
+grpc:
+  default-deadline-ms: 3000
+  server:
+    port: ${GRPC_SERVER_PORT}
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
+
+  client:
+    user:
+      address: ${USER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    character:
+      address: ${CHARACTER_GRPC_ADDRESS}
+      negotiationType: plaintext
+    item:
+      address: ${ITEM_GRPC_ADDRESS}
+      negotiationType: plaintext
+    ai:
+      address: ${AI_GRPC_ADDRESS}
+      negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
+      negotiationType: plaintext
+    # notification 모듈에 알림 저장 및 푸시 발송을 요청할 때 사용하는 gRPC 주소입니다.
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+
+mission:
+  weather:
+    enabled: ${MISSION_WEATHER_ENABLED}
+    provider: ${MISSION_WEATHER_PROVIDER}
+    default-nx: ${KMA_WEATHER_DEFAULT_NX}
+    default-ny: ${KMA_WEATHER_DEFAULT_NY}
+    default-location-label: ${KMA_WEATHER_DEFAULT_LOCATION_LABEL}
+    timeout-ms: ${KMA_WEATHER_TIMEOUT_MS}
+    cache-ttl-seconds: ${KMA_WEATHER_CACHE_TTL_SECONDS}
+    redis-cache-enabled: ${KMA_WEATHER_REDIS_CACHE_ENABLED}
+    rate-limit-enabled: ${KMA_WEATHER_RATE_LIMIT_ENABLED}
+    rate-limit-requests-per-minute: ${KMA_WEATHER_RATE_LIMIT_REQUESTS_PER_MINUTE}
+    rate-limit-key-ttl-seconds: ${KMA_WEATHER_RATE_LIMIT_KEY_TTL_SECONDS}
+    rate-limit-fail-closed: ${KMA_WEATHER_RATE_LIMIT_FAIL_CLOSED}
+    kma:
+      base-url: ${KMA_WEATHER_BASE_URL}
+      service-key: ${KMA_WEATHER_SERVICE_KEY}
+  rag:
+    enabled: ${MISSION_RAG_ENABLED}
+    embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
+    embedding-dimension: ${MISSION_RAG_EMBEDDING_DIMENSION}
+    top-k: ${MISSION_RAG_TOP_K}
+    similarity-threshold: ${MISSION_RAG_SIMILARITY_THRESHOLD}
+    fallback-to-recent-memory: ${MISSION_RAG_FALLBACK_TO_RECENT_MEMORY}
+  memory-embedding:
+    enabled: ${MISSION_MEMORY_EMBEDDING_ENABLED}
+    fixed-delay-ms: ${MISSION_MEMORY_EMBEDDING_FIXED_DELAY_MS}
+    initial-delay-ms: ${MISSION_MEMORY_EMBEDDING_INITIAL_DELAY_MS}
+    batch-size: ${MISSION_MEMORY_EMBEDDING_BATCH_SIZE}
+    max-attempts: ${MISSION_MEMORY_EMBEDDING_MAX_ATTEMPTS}
+    processing-timeout-seconds: ${MISSION_MEMORY_EMBEDDING_PROCESSING_TIMEOUT_SECONDS}
+    retry-initial-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_INITIAL_DELAY_SECONDS}
+    retry-max-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_MAX_DELAY_SECONDS}
+  reward-outbox:
+    enabled: ${MISSION_REWARD_OUTBOX_ENABLED}
+    fixed-delay-ms: ${MISSION_REWARD_OUTBOX_FIXED_DELAY_MS}
+    initial-delay-ms: ${MISSION_REWARD_OUTBOX_INITIAL_DELAY_MS}
+    batch-size: ${MISSION_REWARD_OUTBOX_BATCH_SIZE}
+    max-attempts: ${MISSION_REWARD_OUTBOX_MAX_ATTEMPTS}
+    processing-timeout-seconds: ${MISSION_REWARD_OUTBOX_PROCESSING_TIMEOUT_SECONDS}
+    retry-initial-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_INITIAL_DELAY_SECONDS}
+    retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}
+  reward-wallet:
+    deadline-ms: ${MISSION_REWARD_WALLET_DEADLINE_MS}
+  character-exp:
+    deadline-ms: ${MISSION_CHARACTER_EXP_DEADLINE_MS}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

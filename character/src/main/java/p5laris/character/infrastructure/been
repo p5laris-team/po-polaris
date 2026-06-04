@@ -1,0 +1,3 @@
+모듈 전체에서 사용하는 인프라 설정이 위치합니다.
+DB, Redis, Security 등 @Configuration 클래스들을 여기에 작성합니다.
+domain 하위 infrastructure와 달리, 도메인 로직과 무관한 순수 기술 설정입니다.

@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package p5laris.notification.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.notification.v1";
+option java_outer_classname = "NotificationProto";
+
+service NotificationService {
+  rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse);
+  rpc MarkNotificationRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
+  rpc MarkAllNotificationsRead(MarkAllNotificationsReadRequest) returns (MarkAllNotificationsReadResponse);
+  rpc RegisterFcmToken(RegisterFcmTokenRequest) returns (RegisterFcmTokenResponse);
+  rpc GetNotificationSetting(GetNotificationSettingRequest) returns (GetNotificationSettingResponse);
+  rpc UpdateNotificationSetting(UpdateNotificationSettingRequest) returns (UpdateNotificationSettingResponse);
+  rpc SendPushNotification(SendPushNotificationRequest) returns (SendPushNotificationResponse);
+  rpc GetUnreadNotificationCount(GetUnreadNotificationCountRequest) returns (GetUnreadNotificationCountResponse);
+}
+
+message GetNotificationsRequest {
+  int64 user_id = 1;
+  optional bool read = 2;
+  int64 cursor = 3;
+  int32 size = 4;
+}
+
+message GetNotificationsResponse {
+  repeated Notification notifications = 1;
+  PageInfo page_info = 2;
+}
+
+message MarkNotificationReadRequest {
+  int64 user_id = 1;
+  int64 notification_id = 2;
+  bool read = 3;
+}
+
+message MarkNotificationReadResponse {
+  int64 id = 1;
+  bool read = 2;
+  string updated_at = 3;
+}
+
+message MarkAllNotificationsReadRequest {
+  int64 user_id = 1;
+}
+
+message MarkAllNotificationsReadResponse {
+  int64 updated_count = 1;
+  int64 unread_count = 2;
+  string updated_at = 3;
+}
+
+message RegisterFcmTokenRequest {
+  int64 user_id = 1;
+  string token = 2;
+}
+
+message RegisterFcmTokenResponse {
+  int64 id = 1;
+  string created_at = 2;
+}
+
+message GetNotificationSettingRequest {
+  int64 user_id = 1;
+}
+
+message GetNotificationSettingResponse {
+  NotificationSettingSnapshot setting = 1;
+}
+
+message UpdateNotificationSettingRequest {
+  int64 user_id = 1;
+  bool push_enabled = 2;
+  bool mission_offer_enabled = 3;
+  bool character_state_enabled = 4;
+  bool daily_reminder_enabled = 5;
+  bool quiet_hours_enabled = 6;
+  string quiet_hours_start = 7;
+  string quiet_hours_end = 8;
+}
+
+message UpdateNotificationSettingResponse {
+  NotificationSettingSnapshot setting = 1;
+}
+
+message NotificationSettingSnapshot {
+  bool push_enabled = 1;
+  bool mission_offer_enabled = 2;
+  bool character_state_enabled = 3;
+  bool daily_reminder_enabled = 4;
+  bool quiet_hours_enabled = 5;
+  string quiet_hours_start = 6;
+  string quiet_hours_end = 7;
+}
+
+message SendPushNotificationRequest {
+  int64 user_id = 1;
+  string title = 2;
+  string body = 3;
+  NotificationType notification_type = 4;
+  optional TargetType target_type = 5;
+  optional int64 target_id = 6;
+}
+
+message SendPushNotificationResponse {
+  bool success = 1;
+}
+
+message Notification {
+  int64 id = 1;
+  NotificationType notification_type = 2;
+  string title = 3;
+  string message = 4;
+  optional TargetType target_type = 5;
+  optional int64 target_id = 6;
+  bool read = 7;
+  string created_at = 8;
+}
+
+message PageInfo {
+  int64 next_cursor = 1;
+  bool has_next = 2;
+  int32 size = 3;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  NOTIFICATION_TYPE_MISSION = 1;
+  NOTIFICATION_TYPE_CARE = 2;
+  NOTIFICATION_TYPE_ACHIEVEMENT = 3;
+  NOTIFICATION_TYPE_ATTENDANCE = 4;
+  NOTIFICATION_TYPE_SHARE = 5;
+  NOTIFICATION_TYPE_SYSTEM = 6;
+}
+
+enum TargetType {
+  TARGET_TYPE_UNSPECIFIED = 0;
+  TARGET_TYPE_MISSION = 1;
+  TARGET_TYPE_CHARACTER = 2;
+  TARGET_TYPE_ITEM = 3;
+  TARGET_TYPE_ACHIEVEMENT = 4;
+  TARGET_TYPE_SHARE = 5;
+}
+
+message GetUnreadNotificationCountRequest {
+  int64 user_id = 1;
+}
+
+message GetUnreadNotificationCountResponse {
+  int64 unread_count = 1;
+}

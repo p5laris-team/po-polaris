@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package p5laris.event_log.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.eventlog.v1";
+option java_outer_classname = "EventLogProto";
+
+import "google/protobuf/timestamp.proto";
+
+service EventLogService {
+  rpc recordEventLog(RecordEventLogRequest) returns (RecordEventLogResponse);
+}
+
+message RecordEventLogRequest {
+  string event_id = 1;
+  string event_type = 2;
+
+  optional string source_service = 3;
+
+  optional int64 user_id = 4;
+  optional string anonymous_id = 5;
+
+  optional string ref_type = 6;
+  optional int64 ref_id = 7;
+
+  optional string properties_json = 8;
+  optional string context_json = 9;
+
+  google.protobuf.Timestamp occurred_at = 10;
+}
+
+message RecordEventLogResponse {
+  bool recorded = 1;
+}

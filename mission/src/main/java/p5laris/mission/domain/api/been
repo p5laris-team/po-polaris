@@ -1,0 +1,3 @@
+Inbound Adapter (gRPC 서버)
+Gateway 또는 다른 모듈로부터 들어오는 미션 관련 gRPC 요청을 처리합니다.
+@GrpcService 어노테이션이 붙은 gRPC 서비스 구현체를 여기에 작성합니다.

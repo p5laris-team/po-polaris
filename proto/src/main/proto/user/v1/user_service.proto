@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package p5laris.user.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.user.v1";
+option java_outer_classname = "UserProto";
+
+service UserService {
+  rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GetGoogleAuthUrl(GetGoogleAuthUrlRequest) returns (GetGoogleAuthUrlResponse);
+  rpc LoginGoogle(LoginGoogleRequest) returns (LoginGoogleResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListWeatherRegions(ListWeatherRegionsRequest) returns (ListWeatherRegionsResponse);
+  rpc GetWeatherRegion(GetWeatherRegionRequest) returns (GetWeatherRegionResponse);
+  rpc UpdateWeatherRegion(UpdateWeatherRegionRequest) returns (UpdateWeatherRegionResponse);
+}
+
+message GetGoogleAuthUrlRequest {
+  string redirect_uri = 1;
+}
+
+message GetGoogleAuthUrlResponse {
+  string authorization_url = 1;
+  string state = 2;
+}
+
+message LoginGoogleRequest {
+  string code = 1;
+  string state = 2;
+  string redirect_uri = 3;
+  string client_id = 4;
+}
+
+message LoginGoogleResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  User user = 3;
+}
+
+message User {
+  int64 id = 1;
+  string email = 2;
+  string nickname = 3;
+  string provider = 4;
+  string role = 5;
+  string status = 6;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+message LogoutRequest {
+  int64 user_id = 1;
+  string access_token = 2;
+}
+
+message LogoutResponse {
+  bool logged_out = 1;
+}
+
+message GetUserRequest {
+  int64 user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message WeatherRegion {
+  string code = 1;
+  string display_name = 2;
+  int32 nx = 3;
+  int32 ny = 4;
+}
+
+message ListWeatherRegionsRequest {
+}
+
+message ListWeatherRegionsResponse {
+  repeated WeatherRegion regions = 1;
+}
+
+message GetWeatherRegionRequest {
+  int64 user_id = 1;
+}
+
+message GetWeatherRegionResponse {
+  bool selected = 1;
+  WeatherRegion region = 2;
+}
+
+message UpdateWeatherRegionRequest {
+  int64 user_id = 1;
+  string region_code = 2;
+}
+
+message UpdateWeatherRegionResponse {
+  bool selected = 1;
+  WeatherRegion region = 2;
+}
+
+message PingPongRequest {
+  string message = 1;
+}
+
+message PingPongResponse {
+  HealthStatus health_status = 1;
+  string message  = 2;
+}
+
+enum HealthStatus  {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}

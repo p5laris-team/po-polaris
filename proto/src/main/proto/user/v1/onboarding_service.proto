@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package p5laris.user.v1;
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.user.v1";
+
+service OnboardingService {
+    rpc GetQuestions(GetQuestionsRequest) returns (GetQuestionsResponse);
+    rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+    rpc SaveProfile(SaveProfileRequest) returns (SaveProfileResponse);
+}
+
+message GetQuestionsRequest {}
+
+message GetQuestionsResponse {
+    repeated QuestionDto questions = 1;
+}
+
+message QuestionDto {
+    string key = 1;
+    string content = 2;
+    repeated AnswerOptionDto options = 3;
+    bool multiple_selection = 4;
+    int32 max_selection_count = 5;
+}
+
+message AnswerOptionDto {
+    string key = 1;
+    string value = 2;
+}
+
+message GetProfileRequest {
+    int64 user_id = 1;
+}
+
+message GetProfileResponse {
+    OnboardingProfileDto profile = 1;
+}
+
+message SaveProfileRequest {
+    int64 user_id = 1;
+    OnboardingProfileDto profile = 2;
+}
+
+message SaveProfileResponse {
+    OnboardingProfileDto profile = 1;
+}
+
+message OnboardingProfileDto {
+    string living_type = 1;
+    string wake_up_time = 2;
+    string sleep_time = 3;
+    string preferred_mission_time = 4;
+    string routine_goal = 5;
+    string activity_preference = 6;
+    string mission_intensity = 7;
+    string answers_json = 8;
+    bool completed = 9;
+    int32 onboarding_version = 10;
+    repeated string routine_goals = 11;
+    repeated string preferred_time_slots = 12;
+    repeated string mission_place_contexts = 13;
+    repeated string avoided_mission_tags = 14;
+}

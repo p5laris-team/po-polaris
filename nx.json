@@ -1,0 +1,28 @@
+{
+  "installation": {
+    "version": "22.7.2",
+    "plugins": {
+      "@nx/gradle": "22.7.2"
+    }
+  },
+  "analytics": false,
+  "plugins": [
+    {
+      "plugin": "@nx/gradle",
+      "options": {
+        "testTargetName": "test",
+        "classesTargetName": "classes",
+        "buildTargetName": "build"
+      }
+    }
+  ],
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*"
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/src/test/**/*"
+    ]
+  }
+}

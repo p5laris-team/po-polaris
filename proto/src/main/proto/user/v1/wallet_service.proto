@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package p5laris.user.v1;
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.user.v1";
+
+service WalletService {
+    rpc GetMyWallet(GetMyWalletRequest) returns (WalletResponse);
+    rpc SpendStarPiece(SpendStarPieceRequest) returns (SpendStarPieceResponse);
+    rpc EarnStarPiece(EarnStarPieceRequest) returns (EarnStarPieceResponse);
+    rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse);
+    rpc CheckTransaction(CheckTransactionRequest) returns (CheckTransactionResponse);
+}
+
+message CheckTransactionRequest {
+    string idempotency_key = 1;
+}
+
+message CheckTransactionResponse {
+    bool exists = 1;
+    int32 amount = 2;
+    int64 transaction_id = 3;
+}
+
+message GetMyWalletRequest {
+    int64 user_id = 1;
+}
+
+message WalletResponse {
+    int32 star_piece = 1;
+}
+
+message SpendStarPieceRequest {
+    int64 user_id = 1;
+    int32 amount = 2;
+    string reason = 3;
+    string ref_type = 4;
+    int64 ref_id = 5;
+    string idempotency_key = 6;
+}
+
+message SpendStarPieceResponse {
+    int32 star_piece = 1;
+    int64 transaction_id = 2;
+}
+
+message EarnStarPieceRequest {
+    int64 user_id = 1;
+    int32 amount = 2;
+    string reason = 3;
+    string ref_type = 4;
+    int64 ref_id = 5;
+    string idempotency_key = 6;
+}
+
+message EarnStarPieceResponse {
+    int32 star_piece = 1;
+    int64 transaction_id = 2;
+}
+
+// ── GetTransactions ───────────────────────────────────────────────────────────
+// 별조각 거래내역을 커서 기반 최신순으로 조회한다.
+message GetTransactionsRequest {
+    int64  user_id = 1;
+    string cursor  = 2;  // 빈 문자열이면 첫 페이지
+    int32  size    = 3;  // 기본값 20
+}
+
+message GetTransactionsResponse {
+    repeated Transaction items     = 1;
+    TransactionPageInfo  page_info = 2;
+}
+
+message Transaction {
+    int64  id              = 1;
+    int32  amount          = 2;   // 양수 = 획득, 음수 = 사용
+    int32  balance_after   = 3;
+    string reason          = 4;   // ATTENDANCE_REWARD / MISSION_REWARD / ITEM_PURCHASE / SHARE_REWARD 등
+    string description     = 5;   // 사람이 읽을 수 있는 설명 (선택)
+    string source_type     = 6;   // ref_type (ATTENDANCE / MISSION / ITEM / SHARE 등)
+    int64  source_id       = 7;   // ref_id
+    string occurred_at     = 8;   // ISO 8601 형식 (created_at 사용)
+}
+
+message TransactionPageInfo {
+    string next_cursor = 1;
+    bool   has_next    = 2;
+    int32  size        = 3;
+}
