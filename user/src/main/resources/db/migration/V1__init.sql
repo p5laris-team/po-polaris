@@ -137,8 +137,6 @@ CREATE TABLE payment_transactions (
     pg_provider VARCHAR(50),
     pay_method VARCHAR(50),
     paid_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    cancelled_at TIMESTAMP,
-    cancel_amount INT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (payment_order_id) REFERENCES payment_orders(id) ON DELETE CASCADE

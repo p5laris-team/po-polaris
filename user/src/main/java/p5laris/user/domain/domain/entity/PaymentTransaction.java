@@ -33,14 +33,4 @@ public class PaymentTransaction extends BaseEntity {
     @Column(name = "paid_at", nullable = false)
     private LocalDateTime paidAt;
 
-    @Column(name = "cancelled_at")
-    private LocalDateTime cancelledAt;
-
-    @Column(name = "cancel_amount")
-    private Integer cancelAmount;
-
-    public void cancel(LocalDateTime cancelledAt, int cancelAmount) {
-        this.cancelledAt = cancelledAt;
-        this.cancelAmount = cancelAmount;
-    }
 }
