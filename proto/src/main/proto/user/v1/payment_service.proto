@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package p5laris.user.v1;
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.user.v1";
+
+service PaymentService {
+    rpc CreatePaymentOrder(CreatePaymentOrderRequest) returns (PaymentOrderResponse);
+    rpc CompletePayment(CompletePaymentRequest) returns (CompletePaymentResponse);
+}
+
+message CreatePaymentOrderRequest {
+    int64 user_id = 1;
+    int32 amount = 2;       // 원화 금액 (KRW)
+    int32 star_pieces = 3;  // 충전할 별조각 개수
+}
+
+message PaymentOrderResponse {
+    string order_no = 1;
+    int32 amount = 2;
+    int32 star_pieces = 3;
+    string status = 4;
+}
+
+message CompletePaymentRequest {
+    int64 user_id = 1;
+    string payment_id = 2;    // 포트원 결제 고유 ID (V2의 payment_id)
+    string order_no = 3;  // 상점 주문 고유 ID
+}
+
+message CompletePaymentResponse {
+    bool success = 1;
+    int32 star_piece = 2;     // 충전 후 총 별조각 개수
+}
+

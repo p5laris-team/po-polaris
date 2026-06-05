@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="latte" data-mode="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polaris 통합 테스트 대시보드</title>
+    <!-- Google Fonts: Outfit & Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Portone V2 SDK -->
+    <script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
+    
+    <style>
+        /* ============================================================
+           Polaris Design System - CSS Tokens & Base (Latte Theme)
+           ============================================================ */
+        :root {
+            /* Neutrals */
+            --neutral-50:  #FAF7F2;
+            --neutral-100: #F4EFE6;
+            --neutral-200: #E8E1D2;
+            --neutral-300: #D4CABA;
+            --neutral-400: #A89A85;
+            --neutral-700: #3A3325;
+            --neutral-800: #2A2418;
+            
+            /* Primary (Latte Terracotta) */
+            --clay-50:   #FBEDE3;
+            --clay-400:  #E07A5F;   /* primary */
+            --clay-500:  #C95F47;
+            --clay-600:  #A84A36;
+            
+            /* Accent (Butter Gold) */
+            --butter-50:  #FEF7E0;
+            --butter-300: #F4D35E;   /* accent */
+            
+            /* Semantic Colors */
+            --success: #5B9A6F;
+            --success-soft: #DCEEDF;
+            --warning: #D98531;
+            --warning-soft: #FBE6CE;
+            --danger: #C95252;
+            --danger-soft: #F8DCDC;
+            
+            /* Semantic Tokens - Latte Light */
+            --bg-1: #FAF5E9;             /* 페이지 배경 */
+            --bg-2: #FFFFFF;             /* 카드 배경 */
+            --bg-3: #F2EBDA;             /* 인풋 배경 */
+            --fg-1: #2D2418;             /* 주요 텍스트 */
+            --fg-2: #5C5340;             /* 서브 텍스트 */
+            --fg-3: #8A8170;             /* placeholder/캡션 */
+            
+            --border-1: rgba(45, 36, 24, 0.06);
+            --border-2: rgba(45, 36, 24, 0.12);
+            --border-focus: var(--clay-400);
+            
+            --primary: var(--clay-400);
+            --primary-hover: var(--clay-500);
+            --primary-press: var(--clay-600);
+            --primary-soft: var(--clay-50);
+            
+            /* Spacing & Radius */
+            --space-4: 16px;
+            --space-6: 24px;
+            --space-8: 32px;
+            
+            --radius-sm: 10px;
+            --radius-md: 14px;
+            --radius-lg: 20px;
+            --radius-button: 16px;
+            --radius-pill: 999px;
+            
+            --shadow-md: 0 6px 18px rgba(45, 36, 24, 0.06), 0 2px 4px rgba(45, 36, 24, 0.04);
+            --shadow-lg: 0 14px 32px rgba(45, 36, 24, 0.08), 0 4px 8px rgba(45, 36, 24, 0.04);
+            
+            --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+            --dur-base: 220ms;
+            
+            --font-sans: "Outfit", "Pretendard Variable", -apple-system, sans-serif;
+        }
+
+        /* ============================================================
+           Dark Mode Overrides
+           ============================================================ */
+        [data-mode="dark"] {
+            --bg-1: #16140E;             /* 깊은 다크 브라운 */
+            --bg-2: #221E15;             /* 카드 배경 */
+            --bg-3: #2D281C;             /* 인풋 배경 */
+            
+            --fg-1: #F5EFE2;
+            --fg-2: #C9C1AD;
+            --fg-3: #948C7A;
+            
+            --border-1: rgba(255, 245, 226, 0.06);
+            --border-2: rgba(255, 245, 226, 0.12);
+            
+            --primary-soft: rgba(224, 122, 95, 0.14);
+            --success-soft: rgba(91, 154, 111, 0.14);
+            --danger-soft: rgba(201, 82, 82, 0.14);
+            
+            --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.25);
+            --shadow-lg: 0 14px 32px rgba(0, 0, 0, 0.35);
+        }
+
+        /* ============================================================
+           Base Styles
+           ============================================================ */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-1);
+            color: var(--fg-1);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            transition: background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: var(--space-8) var(--space-4);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 580px;
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-6);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-4);
+        }
+
+        .brand-title {
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--primary) 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Theme Switch Toggle */
+        .theme-toggle-btn {
+            background: var(--bg-2);
+            border: 1px solid var(--border-2);
+            padding: 8px 14px;
+            border-radius: var(--radius-pill);
+            cursor: pointer;
+            color: var(--fg-1);
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: var(--shadow-md);
+            transition: all var(--dur-base) var(--ease-out);
+        }
+
+        .theme-toggle-btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--primary);
+        }
+
+        /* Card Layout */
+        .card {
+            background: var(--bg-2);
+            border: 1px solid var(--border-1);
+            border-radius: var(--radius-lg);
+            padding: var(--space-6);
+            box-shadow: var(--shadow-lg);
+            display: none; /* JS로 분기 제어 */
+            animation: cardFadeIn 0.35s var(--ease-out);
+        }
+
+        .card.active {
+            display: block;
+        }
+
+        @keyframes cardFadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+        }
+
+        .card-description {
+            font-size: 0.95rem;
+            color: var(--fg-2);
+            margin-bottom: var(--space-6);
+        }
+
+        /* Forms & Inputs */
+        .form-group {
+            margin-bottom: var(--space-4);
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--fg-2);
+            margin-bottom: 6px;
+        }
+
+        input, select {
+            width: 100%;
+            background-color: var(--bg-3);
+            border: 1px solid var(--border-2);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            color: var(--fg-1);
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+        }
+
+        input:focus, select:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px var(--primary-soft);
+        }
+
+        /* Option Selection Cards (Toss style) */
+        .option-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: var(--space-4);
+        }
+
+        .option-card {
+            background: var(--bg-3);
+            border: 1px solid var(--border-2);
+            border-radius: var(--radius-md);
+            padding: var(--space-4);
+            cursor: pointer;
+            text-align: center;
+            font-weight: 600;
+            transition: all var(--dur-base) var(--ease-out);
+        }
+
+        .option-card.selected {
+            border-color: var(--primary);
+            background: var(--primary-soft);
+            color: var(--primary);
+            box-shadow: 0 0 0 2px var(--primary);
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius-button);
+            padding: var(--space-4);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--dur-base) var(--ease-out);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            background: var(--primary-press);
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: var(--neutral-300);
+            color: var(--fg-3);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Google Login Button Button styling */
+        .btn-google {
+            background: white;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+            font-weight: 600;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .btn-google:hover {
+            background: #f8f9fa;
+            border-color: #d2e3fc;
+            color: #1a73e8;
+        }
+
+        .google-icon {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Step Wizard Headers */
+        .steps-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: var(--space-4);
+        }
+
+        .step-pill {
+            flex: 1;
+            height: 4px;
+            background: var(--border-2);
+            border-radius: var(--radius-pill);
+            margin-right: 6px;
+            transition: background-color 0.3s ease;
+        }
+
+        .step-pill:last-child {
+            margin-right: 0;
+        }
+
+        .step-pill.active {
+            background: var(--primary);
+        }
+
+        /* Notifications Alert */
+        .alert {
+            padding: 12px var(--space-4);
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: var(--space-4);
+            display: none;
+            align-items: center;
+            gap: 8px;
+            animation: cardFadeIn 0.25s var(--ease-out);
+        }
+
+        .alert-success {
+            background-color: var(--success-soft);
+            color: var(--success);
+            border: 1px solid rgba(91, 154, 111, 0.2);
+        }
+
+        .alert-error {
+            background-color: var(--danger-soft);
+            color: var(--danger);
+            border: 1px solid rgba(201, 82, 82, 0.2);
+        }
+
+        /* Balance Dashboard UI */
+        .balance-board {
+            background: linear-gradient(135deg, var(--primary-soft) 0%, var(--butter-50) 100%);
+            border: 1px solid rgba(224, 122, 95, 0.2);
+            border-radius: var(--radius-md);
+            padding: var(--space-6);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-6);
+        }
+
+        .balance-label {
+            font-size: 0.95rem;
+            color: var(--fg-2);
+            font-weight: 600;
+        }
+
+        .balance-amount {
+            font-size: 2.1rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .balance-amount span {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--fg-2);
+            margin-left: 2px;
+        }
+
+        /* Charge Cards Selection */
+        .charge-item {
+            background: var(--bg-3);
+            border: 1px solid var(--border-2);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: all var(--dur-base) var(--ease-out);
+        }
+
+        .charge-item.selected {
+            border-color: var(--primary);
+            background: var(--primary-soft);
+        }
+
+        .charge-title {
+            font-weight: 700;
+            font-size: 1.05rem;
+        }
+
+        .charge-desc {
+            font-size: 0.8rem;
+            color: var(--fg-3);
+            margin-top: 2px;
+        }
+
+        .charge-price {
+            font-weight: 800;
+            color: var(--primary);
+            font-size: 1.1rem;
+        }
+
+        /* History Ledger */
+        .ledger-section {
+            margin-top: var(--space-6);
+        }
+
+        .ledger-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: var(--space-4);
+            border-left: 4px solid var(--primary);
+            padding-left: 8px;
+        }
+
+        .ledger-container {
+            max-height: 220px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ledger-item {
+            background: var(--bg-3);
+            border: 1px solid var(--border-1);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            animation: cardFadeIn 0.3s ease;
+        }
+
+        .ledger-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .ledger-txt {
+            font-weight: 600;
+        }
+
+        .ledger-sub {
+            font-size: 0.75rem;
+            color: var(--fg-3);
+        }
+
+        .ledger-badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: var(--radius-pill);
+        }
+
+        .ledger-badge-plus {
+            background: var(--success-soft);
+            color: var(--success);
+        }
+
+        .ledger-badge-minus {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
+
+        .logout-link {
+            text-align: center;
+            font-size: 0.88rem;
+            color: var(--fg-3);
+            cursor: pointer;
+            margin-top: var(--space-4);
+            text-decoration: underline;
+        }
+
+        .logout-link:hover {
+            color: var(--primary);
+        }
+
+        /* Onboarding Stage */
+        .stage-image {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto var(--space-4) auto;
+            background: var(--primary-soft);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.2rem;
+        }
+
+        /* Scrollbar customization */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-2);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="brand-title">Polaris</div>
+        <button class="theme-toggle-btn" onclick="toggleThemeMode()">
+            <span id="theme-icon">🌙</span> <span id="theme-text">다크 모드</span>
+        </button>
+    </header>
+
+    <!-- Global Alert Area -->
+    <div class="alert alert-success" id="global-alert-success">성공 알림 메세지</div>
+    <div class="alert alert-error" id="global-alert-error">오류 알림 메세지</div>
+
+    <!-- [Card 1] Step 1: Google 로그인 -->
+    <div class="card" id="card-step-login">
+        <div class="steps-indicator">
+            <div class="step-pill active"></div>
+            <div class="step-pill"></div>
+        </div>
+        <div class="card-title">시작하기</div>
+        <div class="card-description">Polaris에 접속하여 따뜻한 인공지능 루틴 도우미를 만나보세요.</div>
+        
+        <button class="btn btn-google" onclick="startGoogleLogin()">
+            <!-- Google Logo SVG -->
+            <svg class="google-icon" viewBox="0 0 24 24">
+                <path fill="#EA4335" d="M12 5.04c1.67 0 3.2.58 4.38 1.69l3.27-3.27C17.67 1.64 14.98 1 12 1 7.35 1 3.39 3.67 1.4 7.56l3.85 2.99c.92-2.75 3.5-4.51 6.75-4.51z"/>
+                <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.34H12v4.44h6.44c-.28 1.48-1.12 2.73-2.38 3.58l3.7 2.87c2.16-1.99 3.41-4.92 3.41-8.55z"/>
+                <path fill="#FBBC05" d="M5.25 14.77c-.24-.72-.37-1.49-.37-2.27s.13-1.55.37-2.27L1.4 7.24c-.9 1.8-1.4 3.84-1.4 6s.5 4.2 1.4 6l3.85-2.99z"/>
+                <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.7-2.87c-1.03.69-2.35 1.1-4.26 1.1-3.25 0-5.83-1.76-6.75-4.51L1.4 16.8c1.99 3.89 5.95 6.2 10.6 6.2z"/>
+            </svg>
+            Google 계정으로 로그인
+        </button>
+    </div>
+
+    <!-- [Card 2] Step 2: 캐릭터 및 질문 온보딩 -->
+    <div class="card" id="card-step-onboarding">
+        <div class="steps-indicator">
+            <div class="step-pill active"></div>
+            <div class="step-pill active"></div>
+            <div class="step-pill"></div>
+        </div>
+        <div class="card-title">온보딩 정보 등록</div>
+        <div class="card-description">기본 설문 조사를 완료하면 결제 충전소를 이용할 수 있습니다.</div>
+        
+        <div class="stage-image">✨</div>
+
+        <div class="form-group">
+            <label>1. 생활 유형</label>
+            <div class="option-grid">
+                <div class="option-card" id="opt-living-morning" onclick="selectLivingType('MORNING')">아침형 인간</div>
+                <div class="option-card" id="opt-living-night" onclick="selectLivingType('NIGHT')">저녁형 인간</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="input-routine-goal">2. 주요 루틴 목표 (예: EXERCISE, STUDY, HEALTH)</label>
+            <input type="text" id="input-routine-goal" placeholder="목표 입력 (예: EXERCISE)" value="EXERCISE">
+        </div>
+
+        <div class="form-group">
+            <label for="select-mission-intensity">3. 선호 미션 강도</label>
+            <select id="select-mission-intensity">
+                <option value="MIDDLE">보통 (MIDDLE)</option>
+                <option value="HIGH">높음 (HIGH)</option>
+                <option value="LOW">낮음 (LOW)</option>
+            </select>
+        </div>
+
+        <button class="btn" onclick="submitOnboarding()">
+            완료하고 충전소로 이동
+        </button>
+        
+        <div class="logout-link" onclick="logoutSession()">로그아웃</div>
+    </div>
+
+    <!-- [Card 3] Step 3: 별조각 충전 대시보드 -->
+    <div class="card" id="card-step-wallet">
+        <div class="steps-indicator">
+            <div class="step-pill active"></div>
+            <div class="step-pill active"></div>
+        </div>
+        <div class="card-title">별조각 충전소</div>
+        <div class="card-description">구글 로그인에 성공하였습니다. 별조각을 충전해 보세요.</div>
+        
+        <!-- Balance Info -->
+        <div class="balance-board">
+            <div>
+                <div class="balance-label">✨ 보유 별조각</div>
+                <div class="balance-amount" id="txt-star-pieces">0 <span>조각</span></div>
+            </div>
+            <button class="theme-toggle-btn" style="box-shadow: none;" onclick="fetchWalletInfo()">새로고침</button>
+        </div>
+
+        <div class="form-group">
+            <label>충전 상품 선택</label>
+            
+            <div class="charge-item selected" id="charge-item-100" onclick="selectChargeItem(100, 1000)">
+                <div>
+                    <div class="charge-title">별조각 100개</div>
+                    <div class="charge-desc">로컬 가맹점 소액 결제 테스트</div>
+                </div>
+                <div class="charge-price">1,000원</div>
+            </div>
+            
+            <div class="charge-item" id="charge-item-500" onclick="selectChargeItem(500, 5000)">
+                <div>
+                    <div class="charge-title">별조각 500개</div>
+                    <div class="charge-desc">로컬 가맹점 중형 결제 테스트</div>
+                </div>
+                <div class="charge-price">5,000원</div>
+            </div>
+
+            <div class="charge-item" id="charge-item-1000" onclick="selectChargeItem(1000, 10000)">
+                <div>
+                    <div class="charge-title">별조각 1,000개</div>
+                    <div class="charge-desc">대용량 별조각 결제 테스트</div>
+                </div>
+                <div class="charge-price">10,000원</div>
+            </div>
+        </div>
+
+        <button class="btn" style="margin-top: var(--space-4);" onclick="requestPayment()">
+            선택한 상품 결제하기 (토스페이먼츠)
+        </button>
+
+        <!-- Ledger History -->
+        <div class="ledger-section">
+            <div class="ledger-title">최근 지갑 거래내역</div>
+            <div class="ledger-container" id="ledger-list">
+                <div class="ledger-item" style="color: var(--fg-3); justify-content: center;">
+                    거래 내역이 아직 존재하지 않습니다.
+                </div>
+            </div>
+        </div>
+
+        <div class="logout-link" onclick="logoutSession()">로그아웃</div>
+    </div>
+</div>
+
+<script>
+    // ============================================================
+    // State Variables
+    // ============================================================
+    let accessToken = localStorage.getItem("polaris_access_token") || "";
+    let storeId = "";
+    let channelId = "";
+    let currentUserEmail = "test-buyer@p5laris.life";
+    let currentUserNickname = "테스트구매자";
+    
+    // Onboarding Form Selected States
+    let selectedLivingType = "MORNING";
+    
+    // Payment Selected State
+    let selectedStarPieces = 100;
+    let selectedAmount = 1000;
+
+    // ============================================================
+    // DOM Initialization & Router
+    // ============================================================
+    document.addEventListener("DOMContentLoaded", async () => {
+        // 1) OS 다크모드/라이트모드 이전 세팅 반영
+        const savedMode = localStorage.getItem("polaris_mode") || "light";
+        document.documentElement.setAttribute("data-mode", savedMode);
+        updateThemeToggleButton(savedMode);
+
+        // 2) 구글 로그인 콜백 인가 코드 쿼리 분석
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get("code");
+        const stateCode = urlParams.get("state");
+
+        if (authCode && stateCode) {
+            showGlobalAlert("success", "구글 로그인 코드를 획득하였습니다. 세션을 생성하는 중...");
+            // 파라미터가 지저분하므로 URL 청소
+            window.history.replaceState({}, document.title, window.location.pathname);
+            await handleGoogleSessionLogin(authCode, stateCode);
+            return;
+        }
+
+        // 3) 토큰에 따른 라우팅 화면 결정
+        if (accessToken) {
+            await initializeDashboard();
+        } else {
+            showCard("card-step-login");
+        }
+    });
+
+    // ============================================================
+    // API & Data Core Logic
+    // ============================================================
+    
+    // 공통 헤더
+    function getHeaders() {
+        return {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+        };
+    }
+
+    // 초기화 대시보드 상태 로드
+    async function initializeDashboard() {
+        showGlobalAlert("success", "세션을 체크하는 중...");
+        try {
+            // 로그인한 사용자 정보 조회
+            try {
+                const userRes = await fetch("/api/user/v1/users/me", {
+                    headers: getHeaders()
+                });
+                if (userRes.ok) {
+                    const userData = await userRes.json();
+                    if (userData.success && userData.data) {
+                        currentUserEmail = userData.data.email || "test-buyer@p5laris.life";
+                        currentUserNickname = userData.data.nickname || "테스트구매자";
+                    }
+                }
+            } catch (userErr) {
+                console.error("Failed to load user info", userErr);
+            }
+
+            // 온보딩 완료 상태 조회
+            const profileRes = await fetch("/api/onboarding/v1/profiles/me", {
+                headers: getHeaders()
+            });
+
+            if (profileRes.ok) {
+                const data = await profileRes.json();
+                if (data.success) {
+                    const isCompleted = data.data.completed;
+                    if (isCompleted) {
+                        // 온보딩 완료 유저 -> 결제 대시보드 진입
+                        showCard("card-step-wallet");
+                        await loadConfig();
+                        await fetchWalletInfo();
+                        await fetchLedger();
+                    } else {
+                        // 온보딩 미필 유저 -> 백그라운드 자동 등록 후 결제 대시보드 진입
+                        showGlobalAlert("success", "온보딩 정보를 자동으로 등록 중입니다...");
+                        const autoOnboardingSuccess = await autoSubmitOnboarding();
+                        if (autoOnboardingSuccess) {
+                            showCard("card-step-wallet");
+                            await loadConfig();
+                            await fetchWalletInfo();
+                            await fetchLedger();
+                        } else {
+                            // 자동 등록 실패하더라도 결제 진입 시도
+                            showCard("card-step-wallet");
+                            await loadConfig();
+                            await fetchWalletInfo();
+                            await fetchLedger();
+                        }
+                    }
+                } else {
+                    // 유효하지 않은 세션 처리
+                    logoutSession();
+                }
+            } else {
+                logoutSession();
+            }
+        } catch (e) {
+            showGlobalAlert("error", "연동 실패: " + e.message);
+            logoutSession();
+        }
+    }
+
+    // 백그라운드 자동 온보딩 등록
+    async function autoSubmitOnboarding() {
+        try {
+            const payload = {
+                livingType: "MORNING",
+                wakeUpTime: "07:00",
+                sleepTime: "23:00",
+                preferredMissionTime: "08:00",
+                routineGoal: "EXERCISE",
+                activityPreference: "INDOOR",
+                missionIntensity: "MIDDLE",
+                answersJson: "{}",
+                completed: true,
+                onboardingVersion: 2,
+                routineGoals: ["EXERCISE"],
+                preferredTimeSlots: ["08:00"],
+                missionPlaceContexts: ["INDOOR"],
+                avoidedMissionTags: []
+            };
+
+            const res = await fetch("/api/onboarding/v1/profiles/me", {
+                method: "PUT",
+                headers: getHeaders(),
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            return data.success;
+        } catch (e) {
+            console.error("자동 온보딩 실패:", e);
+            return false;
+        }
+    }
+
+    // 구글 로그인 URL 가져와서 리다이렉션
+    async function startGoogleLogin() {
+        try {
+            const redirectUri = window.location.origin + "/oauth/google/callback";
+            const res = await fetch(`/api/auth/v1/google/authorization-url?redirectUri=${encodeURIComponent(redirectUri)}`);
+            const data = await res.json();
+            if (data.success) {
+                window.location.href = data.data.authorizationUrl;
+            } else {
+                showGlobalAlert("error", "구글 로그인 링크 로드 실패: " + data.error.message);
+            }
+        } catch (e) {
+            showGlobalAlert("error", "구글 로그인 에러: " + e.message);
+        }
+    }
+
+    // 구글 로그인 코드로 세션 요청
+    async function handleGoogleSessionLogin(code, state) {
+        try {
+            const redirectUri = window.location.origin + "/oauth/google/callback";
+            const res = await fetch("/api/auth/v1/google/sessions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    code: code,
+                    state: state,
+                    redirectUri: redirectUri
+                })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                accessToken = data.data.accessToken;
+                localStorage.setItem("polaris_access_token", accessToken);
+                showGlobalAlert("success", "로그인 성공! 회원 상태를 불러옵니다.");
+                await initializeDashboard();
+            } else {
+                showGlobalAlert("error", "로그인 세션 생성 실패: " + data.error.message);
+                showCard("card-step-login");
+            }
+        } catch (e) {
+            showGlobalAlert("error", "서버 통신 오류: " + e.message);
+            showCard("card-step-login");
+        }
+    }
+
+    // 온보딩 완료 전송
+    async function submitOnboarding() {
+        const goal = document.getElementById("input-routine-goal").value.trim();
+        const intensity = document.getElementById("select-mission-intensity").value;
+
+        if (!goal) {
+            showGlobalAlert("error", "루틴 목표를 입력해주세요.");
+            return;
+        }
+
+        try {
+            const payload = {
+                livingType: selectedLivingType,
+                wakeUpTime: "07:00",
+                sleepTime: "23:00",
+                preferredMissionTime: "08:00",
+                routineGoal: goal,
+                activityPreference: "INDOOR",
+                missionIntensity: intensity,
+                answersJson: "{}",
+                completed: true,
+                onboardingVersion: 2,
+                routineGoals: [goal],
+                preferredTimeSlots: ["08:00"],
+                missionPlaceContexts: ["INDOOR"],
+                avoidedMissionTags: []
+            };
+
+            const res = await fetch("/api/onboarding/v1/profiles/me", {
+                method: "PUT",
+                headers: getHeaders(),
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                showGlobalAlert("success", "온보딩 정보가 완벽히 저장되었습니다. 충전소로 이동합니다!");
+                showCard("card-step-wallet");
+                await loadConfig();
+                await fetchWalletInfo();
+                await fetchLedger();
+            } else {
+                showGlobalAlert("error", "온보딩 저장 실패: " + data.error.message);
+            }
+        } catch (e) {
+            showGlobalAlert("error", "온보딩 처리 오류: " + e.message);
+        }
+    }
+
+    // 결제 설정 로드
+    async function loadConfig() {
+        try {
+            const res = await fetch("/api/payment/v1/config", { headers: getHeaders() });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    storeId = data.data.storeId;
+                    channelId = data.data.channelId;
+                }
+            }
+        } catch (e) {
+            console.error("포트원 채널 로드 실패", e);
+        }
+    }
+
+    // 지갑 정보 로드
+    async function fetchWalletInfo() {
+        try {
+            const res = await fetch("/api/wallet/v1/wallets/me", { headers: getHeaders() });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById("txt-star-pieces").innerHTML = `${data.data.starPiece} <span>조각</span>`;
+                }
+            }
+        } catch (e) {
+            console.error("지갑 조회 오류", e);
+        }
+    }
+
+    // 최근 거래 내역 로드
+    async function fetchLedger() {
+        try {
+            const res = await fetch("/api/wallet/v1/wallets/me/transactions?size=6", { headers: getHeaders() });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    const items = data.data.items;
+                    const container = document.getElementById("ledger-list");
+
+                    if (items.length === 0) {
+                        container.innerHTML = `<div class="ledger-item" style="color: var(--fg-3); justify-content: center;">거래 내역이 존재하지 않습니다.</div>`;
+                        return;
+                    }
+
+                    container.innerHTML = items.map(tx => {
+                        const amountStr = tx.amount > 0 ? `+${tx.amount}` : `${tx.amount}`;
+                        const badgeClass = tx.amount > 0 ? 'ledger-badge-plus' : 'ledger-badge-minus';
+                        const date = new Date(tx.occurredAt).toLocaleString();
+                        
+                        let actionHtml = `<span class="ledger-badge ${badgeClass}">${amountStr}</span>`;
+
+                        return `
+                            <div class="ledger-item">
+                                <div class="ledger-info">
+                                    <div class="ledger-txt">${tx.description}</div>
+                                    <div class="ledger-sub">${date} | 잔고: ${tx.balanceAfter}개</div>
+                                </div>
+                                <div>
+                                    ${actionHtml}
+                                </div>
+                            </div>
+                        `;
+                    }).join("");
+                }
+            }
+        } catch (e) {
+            console.error("거래내역 조회 오류", e);
+        }
+    }
+
+    // 결제 요청 진행 (포트원 V2)
+    async function requestPayment() {
+        try {
+            // 1) 백엔드에 결제 준비 주문 요청
+            const orderRes = await fetch("/api/payment/v1/orders", {
+                method: "POST",
+                headers: getHeaders(),
+                body: JSON.stringify({ amount: selectedAmount, starPieces: selectedStarPieces })
+            });
+
+            const orderData = await orderRes.json();
+            if (!orderData.success) {
+                showGlobalAlert("error", "주문 준비 실패: " + orderData.error.message);
+                return;
+            }
+
+            const orderNo = orderData.data.orderNo;
+            
+            // 2) 포트원 V2 결제창 호출 (미로드 시 동적 로드 시도)
+            if (!window.PortOne) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement("script");
+                        script.src = "https://cdn.portone.io/v2/browser-sdk.js";
+                        script.onload = () => resolve();
+                        script.onerror = () => reject(new Error("V2 SDK 동적 로딩 실패"));
+                        document.head.appendChild(script);
+                    });
+                } catch (err) {
+                    console.error("포트원 V2 SDK 로드 실패:", err);
+                }
+            }
+
+            if (!window.PortOne) {
+                showGlobalAlert("error", "포트원 V2 결제 SDK가 제대로 로드되지 않았습니다. 인터넷 연결 상태나 브라우저의 광고 차단(AdBlock) 확장 프로그램을 비활성화해 보세요.");
+                return;
+            }
+
+            try {
+                const response = await PortOne.requestPayment({
+                    storeId: storeId,
+                    channelKey: channelId,
+                    paymentId: orderNo, // V2 결제 식별자 (주문번호 매핑)
+                    orderName: `별조각 ${selectedStarPieces}개 충전`,
+                    totalAmount: selectedAmount,
+                    currency: "KRW",
+                    payMethod: "CARD",
+                    customer: {
+                        fullName: currentUserNickname,
+                        email: currentUserEmail
+                    }
+                });
+
+                // 결제 성공 여부 확인
+                if (response.code != null) {
+                    showGlobalAlert("error", "결제 실패/취소: " + response.message);
+                    return;
+                }
+
+                // 3) 백엔드 최종 결제 승인 요청
+                const completeRes = await fetch("/api/payment/v1/completes", {
+                    method: "POST",
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        paymentId: response.paymentId, // 포트원 V2 결제건 고유 ID
+                        orderNo: orderNo
+                    })
+                });
+
+                const completeData = await completeRes.json();
+                if (completeData.success) {
+                    showGlobalAlert("success", `별조각 ${selectedStarPieces}개가 성공적으로 충전되었습니다!`);
+                    await fetchWalletInfo();
+                    await fetchLedger();
+                } else {
+                    showGlobalAlert("error", "결제 승인 거절: " + completeData.error.message);
+                }
+            } catch (err) {
+                showGlobalAlert("error", "결제 진행 중 오류 발생: " + err.message);
+            }
+
+        } catch (e) {
+            showGlobalAlert("error", "결제 프로세스 실패: " + e.message);
+        }
+    }
+
+
+
+    // 로그아웃
+    function logoutSession() {
+        accessToken = "";
+        localStorage.removeItem("polaris_access_token");
+        showGlobalAlert("success", "안전하게 로그아웃 되었습니다.");
+        showCard("card-step-login");
+    }
+
+    // ============================================================
+    // UI Helpers (Theme & Cards Control)
+    // ============================================================
+    function showCard(cardId) {
+        document.querySelectorAll(".card").forEach(card => card.classList.remove("active"));
+        document.getElementById(cardId).classList.add("active");
+    }
+
+    // 테마 모드 전환
+    function toggleThemeMode() {
+        const currentMode = document.documentElement.getAttribute("data-mode");
+        const nextMode = currentMode === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-mode", nextMode);
+        localStorage.setItem("polaris_mode", nextMode);
+        updateThemeToggleButton(nextMode);
+    }
+
+    function updateThemeToggleButton(mode) {
+        const icon = document.getElementById("theme-icon");
+        const text = document.getElementById("theme-text");
+        if (mode === "dark") {
+            icon.innerText = "☀️";
+            text.innerText = "라이트 모드";
+        } else {
+            icon.innerText = "🌙";
+            text.innerText = "다크 모드";
+        }
+    }
+
+    // 온보딩 가상 버튼 선택 제어
+    function selectLivingType(type) {
+        selectedLivingType = type;
+        document.getElementById("opt-living-morning").classList.remove("selected");
+        document.getElementById("opt-living-night").classList.remove("selected");
+        
+        if (type === "MORNING") {
+            document.getElementById("opt-living-morning").classList.add("selected");
+        } else {
+            document.getElementById("opt-living-night").classList.add("selected");
+        }
+    }
+
+    // 결제 아이템 선택 제어
+    function selectChargeItem(starPieces, amount) {
+        selectedStarPieces = starPieces;
+        selectedAmount = amount;
+
+        document.getElementById("charge-item-100").classList.remove("selected");
+        document.getElementById("charge-item-500").classList.remove("selected");
+        document.getElementById("charge-item-1000").classList.remove("selected");
+
+        document.getElementById(`charge-item-${starPieces}`).classList.add("selected");
+    }
+
+    // 전역 알림 노출
+    function showGlobalAlert(type, message) {
+        const successAlert = document.getElementById("global-alert-success");
+        const errorAlert = document.getElementById("global-alert-error");
+
+        successAlert.style.display = "none";
+        errorAlert.style.display = "none";
+
+        const targetAlert = type === "success" ? successAlert : errorAlert;
+        targetAlert.innerText = message;
+        targetAlert.style.display = "flex";
+
+        setTimeout(() => {
+            targetAlert.style.display = "none";
+        }, 4000);
+    }
+</script>
+</body>
+</html>

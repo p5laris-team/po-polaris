@@ -33,7 +33,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/auth/v1/google/authorization-url")
                 .excludePathPatterns("/api/auth/v1/google/sessions")
-                .excludePathPatterns("/api/auth/v1/token-refreshes");
+                .excludePathPatterns("/api/auth/v1/token-refreshes")
+                .excludePathPatterns("/api/auth/v1/test/token");
     }
 
     @Override

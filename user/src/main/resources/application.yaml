@@ -82,3 +82,8 @@ management:
   health:
     db:
       enabled: true
+
+portone:
+  store-id: ${PORTONE_STORE_ID}
+  api-secret: ${PORTONE_API_SECRET}
+  mock-mode: ${PORTONE_MOCK_MODE:false}
