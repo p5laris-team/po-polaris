@@ -1,2 +1,0 @@
-ALTER TABLE share_cards
-    ADD COLUMN IF NOT EXISTS headline VARCHAR(100);
