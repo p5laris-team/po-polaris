@@ -20,3 +20,35 @@ CREATE TABLE event_logs (
 
     CONSTRAINT uk_event_logs_event_id UNIQUE (event_id)
 );
+
+CREATE OR REPLACE VIEW v_daily_user_activity AS
+SELECT
+    DATE(occurred_at) AS active_date,
+    COUNT(DISTINCT user_id) AS dau,
+    COUNT(DISTINCT CASE WHEN event_type = 'USER_SIGNED_UP' THEN user_id END) AS new_users,
+    COUNT(DISTINCT CASE WHEN event_type IN ('MISSION_COMPLETED', 'MISSION_OFFERED', 'SHARE_COMPLETED') THEN user_id END) AS core_action_users
+FROM event_logs
+GROUP BY DATE(occurred_at);
+
+CREATE OR REPLACE VIEW v_daily_mission_funnel AS
+SELECT
+    DATE(occurred_at) AS active_date,
+    COUNT(CASE WHEN event_type = 'ONBOARDING_COMPLETED' THEN 1 END) AS onboarding_completed_events,
+    COUNT(CASE WHEN event_type = 'CHARACTER_CREATED' THEN 1 END) AS character_created_events,
+    COUNT(CASE WHEN event_type = 'MISSION_OFFERED' THEN 1 END) AS mission_offered_events,
+    COUNT(CASE WHEN event_type = 'MISSION_REJECTED' THEN 1 END) AS mission_rejected_events,
+    COUNT(CASE WHEN event_type = 'MISSION_COMPLETED' THEN 1 END) AS mission_completed_events
+FROM event_logs
+GROUP BY DATE(occurred_at);
+
+CREATE OR REPLACE VIEW v_daily_share_store_activity AS
+SELECT
+    DATE(occurred_at) AS active_date,
+    COUNT(CASE WHEN event_type = 'SHARE_CARD_CREATED' THEN 1 END) AS share_card_created_events,
+    COUNT(CASE WHEN event_type = 'SHARE_COMPLETED' THEN 1 END) AS share_completed_events,
+    COUNT(CASE WHEN event_type = 'SHARE_REWARD_CLAIMED' THEN 1 END) AS share_reward_claimed_events,
+    COUNT(CASE WHEN event_type = 'ITEM_PURCHASED' THEN 1 END) AS item_purchased_events,
+    COUNT(DISTINCT CASE WHEN event_type = 'ITEM_PURCHASED' THEN user_id END) AS unique_buyers
+FROM event_logs
+WHERE event_type IN ('SHARE_CARD_CREATED', 'SHARE_COMPLETED', 'SHARE_REWARD_CLAIMED', 'ITEM_PURCHASED')
+GROUP BY DATE(occurred_at);
