@@ -24,6 +24,7 @@ import p5laris.item.domain.domain.repository.UserItemUsageRepository;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.exception.ItemException;
+import org.springframework.kafka.core.KafkaTemplate;
 import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
 import java.util.concurrent.TimeUnit;
 
@@ -42,12 +43,10 @@ public class ItemService {
     private final ApplicationEventPublisher eventPublisher;
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
     private final ItemPurchaseWalletProperties itemPurchaseWalletProperties;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Value("${asset.cdn-base-url}")
     private String cdnBaseUrl;
-
-    @GrpcClient("user")
-    private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
 
     @Transactional(readOnly = true)
     public GetItemsResponse getItems(GetItemsRequest request) {
@@ -208,34 +207,20 @@ public class ItemService {
             return userItemPurchaseRepository.save(purchase);
         });
 
-        SpendStarPieceResponse spendResponse = null;
+        // 카프카로 비동기 차감 이벤트 발행
         try {
-            // Transaction 2: User 서버로 별조각 차감 API(gRPC) 호출
-            spendResponse = deadlineWalletStub().spendStarPiece(
-                SpendStarPieceRequest.newBuilder()
-                    .setUserId(userId)
-                    .setAmount(totalPrice)
-                    .setReason("ITEM_PURCHASE")
-                    .setRefType("ITEM")
-                    .setRefId(itemId)
-                    .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
-                    .build()
-            );
+            p5laris.item.domain.application.event.ItemPurchaseRequestedEvent event =
+                new p5laris.item.domain.application.event.ItemPurchaseRequestedEvent(
+                    pendingPurchase.getId(),
+                    userId,
+                    itemId,
+                    totalPrice,
+                    idempotencyKey != null ? idempotencyKey : ""
+                );
+            kafkaTemplate.send("item-purchase-requested", idempotencyKey != null ? idempotencyKey : "", event);
         } catch (Exception e) {
-            log.error("Failed to spend star piece for userId: {}, amount: {}, itemId: {}", userId, totalPrice, itemId, e);
-            String errMsg = e.getMessage();
-            
-            if (errMsg != null && (errMsg.contains("STAR_PIECE_NOT_ENOUGH") || errMsg.contains("별조각이 부족합니다."))) {
-                // 비즈니스 예외: FAILED 마킹
-                transactionTemplate.execute(status -> {
-                    UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
-                    p.updateStatus("FAILED");
-                    return userItemPurchaseRepository.save(p);
-                });
-                throw new ItemException(ItemErrorCode.STAR_PIECE_NOT_ENOUGH);
-            }
-
-            // 통신 실패 시 상태를 UNKNOWN으로 변경하여 백그라운드 스케줄러가 처리하도록 위임
+            log.error("Failed to publish item purchase request event for purchaseId: {}", pendingPurchase.getId(), e);
+            // 카프카 발행 실패 시 상태를 UNKNOWN으로 변경하여 백그라운드 스케줄러가 재시도하도록 위임
             transactionTemplate.execute(status -> {
                 UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
                 p.updateStatusWithRetry("UNKNOWN", java.time.LocalDateTime.now().plusMinutes(1));
@@ -243,40 +228,15 @@ public class ItemService {
             });
             throw new ItemException(ItemErrorCode.WALLET_SERVICE_CALL_FAILED);
         }
-        
-        final SpendStarPieceResponse finalSpendResponse = spendResponse;
 
-        // Transaction 2: 성공 처리 및 유저 인벤토리 지급
-        UserItemPurchase completedPurchase = transactionTemplate.execute(status -> {
-            UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
-
-            p.updateStatus("COMPLETED");
-            p.updateSuccessData(finalSpendResponse.getStarPiece(), finalSpendResponse.getTransactionId());
-            
-            UserItem uItem = p.getUserItem();
-            uItem.addQuantity(finalQuantity);
-            userItemRepository.save(uItem);
-
-            eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
-                    userId, uItem, item, finalQuantity, totalPrice, 
-                    finalSpendResponse.getTransactionId(), finalSpendResponse.getStarPiece()
-            ));
-            eventPublisher.publishEvent(ItemEventLogEvent.starPieceSpent(
-                    userId, item, totalPrice, finalSpendResponse.getTransactionId(), 
-                    finalSpendResponse.getStarPiece(), idempotencyKey != null ? idempotencyKey : ""
-            ));
-            
-            return userItemPurchaseRepository.save(p);
-        });
-        
         return PurchaseItemResponse.newBuilder()
-                .setPurchaseId(completedPurchase.getId())
+                .setPurchaseId(pendingPurchase.getId())
                 .setItemId(itemId)
                 .setName(item.getName())
                 .setQuantity(finalQuantity)
                 .setPrice(totalPrice)
-                .setStarPiece(finalSpendResponse.getStarPiece())
-                .setTransactionId(finalSpendResponse.getTransactionId())
+                .setStarPiece(0)
+                .setTransactionId(0L)
                 .build();
     }
 
@@ -428,9 +388,5 @@ public class ItemService {
             normalizedImageUrl = "/" + normalizedImageUrl;
         }
         return baseUrl + normalizedImageUrl;
-    }
-
-    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
-        return walletStub.withDeadlineAfter(itemPurchaseWalletProperties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }
