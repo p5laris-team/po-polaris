@@ -1,12 +1,9 @@
 package p5laris.user.domain.application.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.protobuf.Timestamp;
-import com.p5laris.proto.eventlog.v1.EventLogServiceGrpc;
-import com.p5laris.proto.eventlog.v1.RecordEventLogRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -29,6 +26,9 @@ public class OutboxRelayScheduler {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    
+    // 비동기 카프카 메시지 전송을 위한 템플릿을 주입받습니다.
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @PostConstruct
     public void init() {
@@ -39,15 +39,13 @@ public class OutboxRelayScheduler {
     @Value("${spring.application.name:user}")
     private String sourceService;
 
-    @GrpcClient("event-log")
-    private EventLogServiceGrpc.EventLogServiceBlockingStub eventLogStub;
-
-    @GrpcClient("notification")
-    private com.p5laris.proto.notification.v1.NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
-
     private static final int BATCH_SIZE = 100;
     private static final int MAX_ATTEMPTS = 5;
 
+    /**
+     * 주기적으로 (5초 간격) DB의 아웃박스 테이블에서 전송 대기 상태(PENDING)인 이벤트를 조회하여
+     * 카프카 브로커로 비동기 전송(릴레이)을 수행합니다.
+     */
     @Scheduled(fixedDelayString = "5000")
     @Transactional
     public void relayEvents() {
@@ -58,7 +56,7 @@ public class OutboxRelayScheduler {
         
         for (OutboxEvent pendingEvent : events) {
             try {
-                // 비관적 락 획득 및 최신 상태 조회
+                // 비관적 락(Lock)을 획득하여 다중 서버 환경에서 동일한 이벤트를 중복 처리하지 않도록 방어
                 OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId())
                         .orElse(null);
 
@@ -66,49 +64,50 @@ public class OutboxRelayScheduler {
                     continue;
                 }
 
-                // 최신 상태 재검증 (이미 다른 서버가 발송했거나 발송 중인 경우 건너뜀)
+                // 처리 대기 상태가 아니면 다른 서버에서 이미 처리 중인 것이므로 스킵
                 if (!"PENDING".equals(outboxEvent.getStatus())) {
                     continue;
                 }
 
-                // 재시도 대기 시각이 아직 지나지 않은 경우 건너뜀 (타 서버가 처리 실패 후 대기 중인 경우)
+                // 백오프 시간에 걸려있는 경우 (실패 후 재시도 대기 시간) 스킵
                 if (outboxEvent.getNextAttemptAt() != null && outboxEvent.getNextAttemptAt().isAfter(LocalDateTime.now())) {
                     continue;
                 }
 
-                // 상태를 PROCESSING으로 변경하여 락 효과
+                // 상태를 PROCESSING으로 올려 락 세팅
                 outboxEvent.processing();
                 outboxEventRepository.saveAndFlush(outboxEvent);
 
                 if ("USER_EVENT_LOG".equals(outboxEvent.getAggregateType())) {
+                    // 1. 이벤트 로그 타입인 경우, payload를 역직렬화하여 'user-event-logs' 토픽으로 카프카 발행
                     UserEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), UserEventLogEvent.class);
-                    eventLogStub.recordEventLog(toRequest(event, outboxEvent.getIdempotencyKey()));
+                    
+                    // [Kafka 도입] gRPC 동기 호출 대신 Kafka 토픽 발행으로 전격 비동기화
+                    kafkaTemplate.send("user-event-logs", outboxEvent.getIdempotencyKey(), event);
+                    
                 } else if ("NOTIFICATION_REQUEST".equals(outboxEvent.getAggregateType())) {
+                    // 2. 알림 요청 타입인 경우, payload를 역직렬화하여 'notification-requests' 토픽으로 카프카 발행
                     NotificationRequestEvent event = objectMapper.readValue(outboxEvent.getPayload(), NotificationRequestEvent.class);
-                    com.p5laris.proto.notification.v1.SendPushNotificationRequest req = com.p5laris.proto.notification.v1.SendPushNotificationRequest.newBuilder()
-                            .setUserId(event.userId())
-                            .setTitle(event.title())
-                            .setBody(event.body())
-                            .setNotificationType(com.p5laris.proto.notification.v1.NotificationType.valueOf(event.notificationType()))
-                            .build();
-                    notificationStub.sendPushNotification(req);
+                    
+                    // [Kafka 도입] gRPC 동기 호출 대신 Kafka 토픽 발행으로 전격 비동기화
+                    kafkaTemplate.send("notification-requests", outboxEvent.getIdempotencyKey(), event);
                 }
                 
+                // 전송 성공 처리
                 outboxEvent.success();
                 outboxEventRepository.saveAndFlush(outboxEvent);
-                log.debug("Successfully relayed outbox event: {}", outboxEvent.getId());
+                log.debug("Successfully relayed user outbox event via Kafka. id={}", outboxEvent.getId());
 
                 meterRegistry.counter("outbox.events.processed",
                         "status", "SUCCESS",
                         "aggregate_type", outboxEvent.getAggregateType()
                 ).increment();
             } catch (Exception e) {
-                log.error("Failed to relay outbox event: {}", pendingEvent.getId(), e);
+                log.error("Failed to relay user outbox event. id={}, type={}", pendingEvent.getId(), pendingEvent.getAggregateType(), e);
                 
-                // 락이 잡힌 최신 엔티티의 attemptCount를 기준으로 갱신
+                // 락이 잡힌 최신 엔티티의 attemptCount를 기준으로 재시도 횟수를 늘리고 지수 백오프 적용
                 OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId()).orElse(pendingEvent);
                 int attempt = outboxEvent.getAttemptCount() + 1;
-                // 지수 백오프: 1분 -> 2분 -> 4분 -> 8분 ...
                 long backoffMinutes = (long) Math.pow(2, attempt - 1);
                 LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes(backoffMinutes);
                 
@@ -123,41 +122,14 @@ public class OutboxRelayScheduler {
         }
     }
 
+    /**
+     * 성공적으로 발송 완료된(SUCCEEDED) 1일 이상 지난 아웃박스 데이터를 매일 새벽 2시에 일괄 정리(Delete)합니다.
+     */
     @Scheduled(cron = "0 0 2 * * *") // 매일 새벽 2시
     @Transactional
     public void cleanupSucceededEvents() {
         LocalDateTime threshold = LocalDateTime.now().minusDays(1);
         outboxEventRepository.deleteSucceededEvents(threshold);
         log.info("Cleaned up succeeded outbox events older than 1 day");
-    }
-
-    private RecordEventLogRequest toRequest(UserEventLogEvent event, String idempotencyKey) throws Exception {
-        RecordEventLogRequest.Builder builder = RecordEventLogRequest.newBuilder()
-                .setEventId(idempotencyKey)
-                .setEventType(event.eventType())
-                .setSourceService(sourceService)
-                .setOccurredAt(toTimestamp(event.occurredAt().toInstant()));
-
-        if (event.userId() != null) {
-            builder.setUserId(event.userId());
-        }
-        if (event.refType() != null && !event.refType().isBlank()) {
-            builder.setRefType(event.refType());
-        }
-        if (event.refId() != null) {
-            builder.setRefId(event.refId());
-        }
-        if (event.metadata() != null && !event.metadata().isEmpty()) {
-            builder.setPropertiesJson(objectMapper.writeValueAsString(event.metadata()));
-        }
-
-        return builder.build();
-    }
-
-    private Timestamp toTimestamp(Instant instant) {
-        return Timestamp.newBuilder()
-                .setSeconds(instant.getEpochSecond())
-                .setNanos(instant.getNano())
-                .build();
     }
 }

@@ -1,0 +1,94 @@
+package p5laris.notification.domain.application;
+
+import com.p5laris.proto.notification.v1.NotificationType;
+import com.p5laris.proto.notification.v1.SendPushNotificationRequest;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.stereotype.Component;
+import p5laris.notification.domain.application.event.NotificationRequestEvent;
+import p5laris.notification.domain.domain.entity.Notification;
+
+/**
+ * Notification 모듈의 Kafka 메시지 컨슈머 클래스입니다.
+ * 
+ * [역할]
+ * 1. 'notification-requests' 토픽을 구독하여 타 모듈(예: user 모듈의 출석 체크)에서 요청한 푸시 메시지 알림 이벤트를 비동기로 수신합니다.
+ * 2. 수신한 DTO를 기반으로 로컬 Notification 데이터베이스에 알림 수신 내역을 동기식으로 먼저 인서트(저장)합니다.
+ * 3. 저장된 내역을 바탕으로 실제 FCM(Firebase Cloud Messaging) 디바이스 푸시 발송 처리를 비동기로 수행합니다.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class NotificationKafkaConsumer {
+
+    private final NotificationService notificationService;
+    private final FcmSenderService fcmSenderService;
+
+    /**
+     * 'notification-requests' 토픽으로 인입되는 푸시 발송 메시지를 처리하는 리스너 메서드입니다.
+     *
+     * @param event 푸시 정보가 담긴 알림 요청 DTO
+     * @param idempotencyKey 중복 처리 방지용 멱등키 (Kafka Message Key)
+     */
+    @KafkaListener(topics = "notification-requests", groupId = "notification-group")
+    public void consumeNotificationRequest(
+            NotificationRequestEvent event,
+            @Header(KafkaHeaders.RECEIVED_KEY) String idempotencyKey
+    ) {
+        log.info("[Kafka Consumer] 알림 발송 요청 수신 - 사용자: {}, 제목: {}, 타입: {}, 멱등키: {}", 
+                event.userId(), event.title(), event.notificationType(), idempotencyKey);
+        
+        try {
+            // 1. 이벤트 문자열 타입의 notificationType을 proto enum 타입으로 매핑
+            NotificationType protoType = mapToProtoType(event.notificationType());
+
+            // 2. 서비스 호출을 위한 proto Request 빌드
+            SendPushNotificationRequest protoRequest = SendPushNotificationRequest.newBuilder()
+                    .setUserId(event.userId())
+                    .setTitle(event.title())
+                    .setBody(event.body())
+                    .setNotificationType(protoType)
+                    .build();
+
+            // 3. DB에 알림 이력 생성 및 저장 (동기)
+            Notification notification = notificationService.createNotification(protoRequest);
+
+            // 4. FCM 실제 푸시 발송 비동기 트리거
+            fcmSenderService.sendPushNotification(
+                    notification.getId(),
+                    protoRequest.getUserId(),
+                    protoRequest.getTitle(),
+                    protoRequest.getBody(),
+                    notification.getNotificationType()
+            );
+
+            log.info("[Kafka Consumer] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
+        } catch (Exception e) {
+            log.error("[Kafka Consumer] 알림 발송 처리 중 예외 발생 - 멱등키: {}", idempotencyKey, e);
+            // 메시지 유실 방지 및 무한 롤백 차단을 위해 catch 후 로깅 처리
+        }
+    }
+
+    /**
+     * DTO의 알림 타입 문자열 정보를 protobuf 형식의 NotificationType Enum으로 형변환 매핑해 줍니다.
+     */
+    private NotificationType mapToProtoType(String typeStr) {
+        if (typeStr == null) {
+            return NotificationType.NOTIFICATION_TYPE_SYSTEM;
+        }
+        try {
+            return NotificationType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            // 만약 'ATTENDANCE' 등의 짧은 형태로 들어온 경우 'NOTIFICATION_TYPE_ATTENDANCE' 로 치환 시도
+            String formatted = "NOTIFICATION_TYPE_" + typeStr.toUpperCase();
+            try {
+                return NotificationType.valueOf(formatted);
+            } catch (Exception ex) {
+                return NotificationType.NOTIFICATION_TYPE_SYSTEM;
+            }
+        }
+    }
+}

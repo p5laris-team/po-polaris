@@ -2,8 +2,21 @@ server:
   port: ${SERVER_PORT}
 
 spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:event-log/.env[.properties]
   application:
     name: event-log
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: event-log-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
 
   datasource:
     url: ${DB_URL}

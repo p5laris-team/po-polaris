@@ -27,7 +27,7 @@ class ItemOutboxRelaySchedulerTest {
     private OutboxEventRepository outboxEventRepository;
 
     @Mock
-    private EventLogServiceGrpc.EventLogServiceBlockingStub eventLogStub;
+    private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
 
     private SimpleMeterRegistry meterRegistry;
     private ItemOutboxRelayScheduler scheduler;
@@ -40,9 +40,9 @@ class ItemOutboxRelaySchedulerTest {
         scheduler = new ItemOutboxRelayScheduler(
                 outboxEventRepository,
                 objectMapper,
-                meterRegistry
+                meterRegistry,
+                kafkaTemplate
         );
-        ReflectionTestUtils.setField(scheduler, "eventLogStub", eventLogStub);
         ReflectionTestUtils.setField(scheduler, "sourceService", "item");
         scheduler.init();
     }
@@ -73,6 +73,7 @@ class ItemOutboxRelaySchedulerTest {
 
         scheduler.processOutboxEvents();
 
+        verify(kafkaTemplate, times(1)).send(eq("item-event-logs"), eq("idemp-1"), any());
         verify(outboxEventRepository, times(2)).saveAndFlush(any(OutboxEvent.class));
         assertThat(event.getStatus()).isEqualTo("SUCCEEDED");
 
