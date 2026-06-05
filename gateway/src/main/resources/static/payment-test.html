@@ -684,6 +684,8 @@
     let accessToken = localStorage.getItem("polaris_access_token") || "";
     let storeId = "";
     let channelId = "";
+    let currentUserEmail = "test-buyer@p5laris.life";
+    let currentUserNickname = "테스트구매자";
     
     // Onboarding Form Selected States
     let selectedLivingType = "MORNING";
@@ -738,6 +740,22 @@
     async function initializeDashboard() {
         showGlobalAlert("success", "세션을 체크하는 중...");
         try {
+            // 로그인한 사용자 정보 조회
+            try {
+                const userRes = await fetch("/api/user/v1/users/me", {
+                    headers: getHeaders()
+                });
+                if (userRes.ok) {
+                    const userData = await userRes.json();
+                    if (userData.success && userData.data) {
+                        currentUserEmail = userData.data.email || "test-buyer@p5laris.life";
+                        currentUserNickname = userData.data.nickname || "테스트구매자";
+                    }
+                }
+            } catch (userErr) {
+                console.error("Failed to load user info", userErr);
+            }
+
             // 온보딩 완료 상태 조회
             const profileRes = await fetch("/api/onboarding/v1/profiles/me", {
                 headers: getHeaders()
@@ -1022,31 +1040,18 @@
                 return;
             }
 
-            // 가맹점 식별코드가 빈값이거나 placeholder 형태 또는 더미일 때, 
-            // V2 공식 테스트 가맹점 코드 'store-30bb17fd-d0ff-4e78-9584-cb5d40a0495f'를 사용합니다.
-            let activeStoreId = storeId;
-            if (!activeStoreId || activeStoreId.includes("${") || activeStoreId === "dummy_store_id" || activeStoreId === "imp00000000" || activeStoreId === "imp37937407") {
-                activeStoreId = "store-30bb17fd-d0ff-4e78-9584-cb5d40a0495f";
-            }
-
-            // 채널 ID가 V1형식이거나 빈값일 때, 토스페이먼츠 V2 테스트 채널키를 사용합니다.
-            let activeChannelKey = channelId;
-            if (!activeChannelKey || activeChannelKey.includes("${") || activeChannelKey === "dummy_channel_id" || activeChannelKey === "html5_inicis.inicis_tpay") {
-                activeChannelKey = "channel-key-831e5091-66fc-46cd-9e9c-b17e889a7a92";
-            }
-
             try {
                 const response = await PortOne.requestPayment({
-                    storeId: activeStoreId,
-                    channelKey: activeChannelKey,
+                    storeId: storeId,
+                    channelKey: channelId,
                     paymentId: orderNo, // V2 결제 식별자 (주문번호 매핑)
                     orderName: `별조각 ${selectedStarPieces}개 충전`,
                     totalAmount: selectedAmount,
                     currency: "KRW",
                     payMethod: "CARD",
                     customer: {
-                        fullName: "테스트구매자",
-                        email: "test-buyer@p5laris.life"
+                        fullName: currentUserNickname,
+                        email: currentUserEmail
                     }
                 });
 

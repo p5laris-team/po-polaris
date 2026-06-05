@@ -37,13 +37,13 @@ public class PaymentService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    @Value("${portone.store-id:dummy_store_id}")
+    @Value("${portone.store-id}")
     private String storeId;
 
-    @Value("${portone.api-secret:dummy_api_secret}")
+    @Value("${portone.api-secret}")
     private String apiSecret;
 
-    @Value("${portone.mock-mode:true}")
+    @Value("${portone.mock-mode:false}")
     private boolean mockMode;
 
     /**
