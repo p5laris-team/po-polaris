@@ -78,5 +78,15 @@ CREATE TABLE notification_settings (
     daily_push_limit INT NOT NULL DEFAULT 3, -- 하루 푸시 최대 발송 수
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 생성일
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP -- 수정일
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 수정일
+
+    mission_offer_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    character_state_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    daily_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    quiet_hours_start TIME NOT NULL DEFAULT '22:00',
+    quiet_hours_end TIME NOT NULL DEFAULT '08:00',
+
+    CONSTRAINT uk_notification_settings_user_id
+        UNIQUE (user_id)
 );
