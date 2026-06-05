@@ -7,7 +7,6 @@ option java_package = "com.p5laris.proto.user.v1";
 service PaymentService {
     rpc CreatePaymentOrder(CreatePaymentOrderRequest) returns (PaymentOrderResponse);
     rpc CompletePayment(CompletePaymentRequest) returns (CompletePaymentResponse);
-    rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentResponse);
 }
 
 message CreatePaymentOrderRequest {
@@ -34,13 +33,3 @@ message CompletePaymentResponse {
     int32 star_piece = 2;     // 충전 후 총 별조각 개수
 }
 
-message RefundPaymentRequest {
-    int64 user_id = 1;
-    string order_no = 2;
-    string reason = 3;
-}
-
-message RefundPaymentResponse {
-    bool success = 1;
-    int32 star_piece = 2;     // 환불 후 총 별조각 개수
-}

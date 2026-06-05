@@ -68,19 +68,4 @@ public class PaymentController {
                 request.getOrderNo()
         ));
     }
-
-    /**
-     * 결제 취소 및 환불 처리
-     */
-    @PostMapping("/v1/refunds")
-    public ApiResponse<PaymentDto.RefundResponse> refundPayment(
-            @LoginUserId Long userId,
-            @Valid @RequestBody PaymentDto.RefundRequest request
-    ) {
-        return ApiResponse.success(paymentGatewayService.refundPayment(
-                userId,
-                request.getOrderNo(),
-                request.getReason()
-        ));
-    }
 }

@@ -50,23 +50,4 @@ public class PaymentDto {
         private boolean success;
         private int starPiece;
     }
-
-    @Getter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class RefundRequest {
-        @NotBlank(message = "orderNo는 필수입니다.")
-        private String orderNo;
-
-        @NotBlank(message = "환불 사유는 필수입니다.")
-        private String reason;
-    }
-
-    @Getter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class RefundResponse {
-        private boolean success;
-        private int starPiece;
-    }
 }

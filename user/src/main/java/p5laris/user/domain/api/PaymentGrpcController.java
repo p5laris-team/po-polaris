@@ -67,29 +67,7 @@ public class PaymentGrpcController extends PaymentServiceGrpc.PaymentServiceImpl
         }
     }
 
-    @Override
-    public void refundPayment(RefundPaymentRequest request, StreamObserver<RefundPaymentResponse> responseObserver) {
-        try {
-            int updatedStarPieces = paymentService.refundPayment(
-                    request.getUserId(),
-                    request.getOrderNo(),
-                    request.getReason()
-            );
 
-            RefundPaymentResponse response = RefundPaymentResponse.newBuilder()
-                    .setSuccess(true)
-                    .setStarPiece(updatedStarPieces)
-                    .build();
-
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-        } catch (UserException e) {
-            String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
-        } catch (Exception e) {
-            responseObserver.onError(internalError("결제 환불 처리", e));
-        }
-    }
 
     private RuntimeException internalError(String operation, Exception e) {
         log.error("결제 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);

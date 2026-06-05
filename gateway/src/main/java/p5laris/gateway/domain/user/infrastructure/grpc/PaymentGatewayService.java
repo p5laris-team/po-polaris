@@ -43,18 +43,4 @@ public class PaymentGatewayService {
         );
     }
 
-    public PaymentDto.RefundResponse refundPayment(Long userId, String orderNo, String reason) {
-        RefundPaymentResponse response = paymentServiceStub.refundPayment(
-                RefundPaymentRequest.newBuilder()
-                        .setUserId(userId)
-                        .setOrderNo(orderNo)
-                        .setReason(reason)
-                        .build()
-        );
-
-        return new PaymentDto.RefundResponse(
-                response.getSuccess(),
-                response.getStarPiece()
-        );
-    }
 }
