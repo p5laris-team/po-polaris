@@ -18,16 +18,136 @@ CREATE TABLE user_items (
     user_id BIGINT NOT NULL,
     item_id BIGINT NOT NULL REFERENCES items(id),
     quantity INT NOT NULL DEFAULT 1,
-    equipped BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, item_id)
 );
 
--- Seed Data
-INSERT INTO items (name, description, item_type, price, effect, effect_type, image_url, active) VALUES
-('말랑 별빛 스킨', '말랑말랑하게 빛나는 스킨입니다.', 'SKIN', 60, NULL, NULL, 'https://cdn.polaris.app/items/skin-soft-star.png', TRUE),
-('은하수 오로라 스킨', '아름다운 은하수 오로라 무늬의 스킨입니다.', 'SKIN', 100, NULL, NULL, 'https://cdn.polaris.app/items/skin-milky-way.png', TRUE),
-('별사탕밥', '캐릭터의 배고픔을 채워주는 달콤한 별사탕밥입니다.', 'CONSUMABLE', 10, 30, 'FOOD', 'https://cdn.polaris.app/items/candy-rice.png', TRUE),
-('구름 베개', '캐릭터의 피로를 풀어주는 푹신한 구름 베개입니다.', 'CONSUMABLE', 15, 40, 'REST', 'https://cdn.polaris.app/items/cloud-pillow.png', TRUE),
-('별 장난감', '캐릭터의 애정을 올려주는 귀여운 별 장난감입니다.', 'CONSUMABLE', 15, 40, 'PLAY', 'https://cdn.polaris.app/items/star-toy.png', TRUE);
+CREATE TABLE item_usage_histories (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    user_item_id    BIGINT NOT NULL REFERENCES user_items(id),
+    item_id         BIGINT NOT NULL REFERENCES items(id),
+    quantity        INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    ref_type        VARCHAR(50),
+    ref_id          BIGINT,
+    idempotency_key VARCHAR(100) UNIQUE,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_item_usage_histories_user_id ON item_usage_histories(user_id);
+CREATE INDEX idx_item_usage_histories_user_item_id ON item_usage_histories(user_item_id);
+
+CREATE TABLE item_purchase_histories (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    user_item_id    BIGINT NOT NULL REFERENCES user_items(id),
+    item_id         BIGINT NOT NULL REFERENCES items(id),
+    quantity        INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    price           INT NOT NULL,
+    star_piece      INT NOT NULL,
+    transaction_id  BIGINT NOT NULL,
+    idempotency_key VARCHAR(100) UNIQUE,
+    status          VARCHAR(20) NOT NULL DEFAULT 'COMPLETED',
+    attempt_count   INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_item_purchase_histories_user_id ON item_purchase_histories(user_id);
+CREATE INDEX idx_item_purchase_histories_user_item_id ON item_purchase_histories(user_item_id);
+CREATE INDEX idx_item_purchase_histories_status_next_attempt ON item_purchase_histories(status, next_attempt_at);
+
+CREATE TABLE item_outbox_events (
+    id BIGSERIAL PRIMARY KEY,
+    aggregate_type VARCHAR(50) NOT NULL,
+    aggregate_id BIGINT NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    payload jsonb NOT NULL,
+    idempotency_key VARCHAR(120) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_attempt_at TIMESTAMP NOT NULL,
+    last_error_message TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_outbox_events_idempotency_key UNIQUE (idempotency_key),
+    CONSTRAINT chk_outbox_events_status CHECK (
+        status IN (
+            'PENDING',
+            'PROCESSING',
+            'SUCCEEDED',
+            'FAILED'
+        )
+    )
+);
+
+CREATE INDEX idx_outbox_events_status_next_attempt ON item_outbox_events(status, next_attempt_at);
+
+-- Seed Data (Reflected V5 reset)
+INSERT INTO items (name, description, item_type, price, effect, effect_type, image_url, active, character_type_id) VALUES
+('푸른 새벽 스킨', '푸른 새벽처럼 신비로운 분위기의 스킨입니다.', 'SKIN', 200, NULL, NULL, '/assets/skins/dawn/thumbnails/skin-dawn-thumbnail.png', TRUE, NULL),
+('푸른 새벽 스킨 - 쪼리 happy', '새벽 스킨 쪼리 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/core/skin-dawn-jjori-happy.png', FALSE, 3),
+('푸른 새벽 스킨 - 쪼리 idle', '새벽 스킨 쪼리 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/core/skin-dawn-jjori-idle.png', FALSE, 3),
+('푸른 새벽 스킨 - 쪼리 sleepy', '새벽 스킨 쪼리 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/core/skin-dawn-jjori-sleepy.png', FALSE, 3),
+('푸른 새벽 스킨 - 쪼리 hungry', '새벽 스킨 쪼리 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/status/skin-dawn-jjori-hungry.png', FALSE, 3),
+('푸른 새벽 스킨 - 쪼리 lonely', '새벽 스킨 쪼리 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/status/skin-dawn-jjori-lonely.png', FALSE, 3),
+('푸른 새벽 스킨 - 쪼리 low-energy', '새벽 스킨 쪼리 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/jjori/status/skin-dawn-jjori-low-energy.png', FALSE, 3),
+('푸른 새벽 스킨 - 무무 happy', '새벽 스킨 무무 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/core/skin-dawn-mumu-happy.png', FALSE, 2),
+('푸른 새벽 스킨 - 무무 idle', '새벽 스킨 무무 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/core/skin-dawn-mumu-idle.png', FALSE, 2),
+('푸른 새벽 스킨 - 무무 sleepy', '새벽 스킨 무무 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/core/skin-dawn-mumu-sleepy.png', FALSE, 2),
+('푸른 새벽 스킨 - 무무 hungry', '새벽 스킨 무무 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/status/skin-dawn-mumu-hungry.png', FALSE, 2),
+('푸른 새벽 스킨 - 무무 lonely', '새벽 스킨 무무 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/status/skin-dawn-mumu-lonely.png', FALSE, 2),
+('푸른 새벽 스킨 - 무무 low-energy', '새벽 스킨 무무 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/mumu/status/skin-dawn-mumu-low-energy.png', FALSE, 2),
+('푸른 새벽 스킨 - 노바 happy', '새벽 스킨 노바 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/core/skin-dawn-nova-happy.png', FALSE, 1),
+('푸른 새벽 스킨 - 노바 idle', '새벽 스킨 노바 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/core/skin-dawn-nova-idle.png', FALSE, 1),
+('푸른 새벽 스킨 - 노바 sleepy', '새벽 스킨 노바 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/core/skin-dawn-nova-sleepy.png', FALSE, 1),
+('푸른 새벽 스킨 - 노바 hungry', '새벽 스킨 노바 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/status/skin-dawn-nova-hungry.png', FALSE, 1),
+('푸른 새벽 스킨 - 노바 lonely', '새벽 스킨 노바 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/status/skin-dawn-nova-lonely.png', FALSE, 1),
+('푸른 새벽 스킨 - 노바 low-energy', '새벽 스킨 노바 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/dawn/equipped/nova/status/skin-dawn-nova-low-energy.png', FALSE, 1),
+
+('은하수 오로라 스킨', '고요한 밤하늘처럼 깊고 차분한 분위기의 스킨입니다.', 'SKIN', 200, NULL, NULL, '/assets/skins/night-sky/thumbnails/skin-night-sky-thumbnail.png', TRUE, NULL),
+('은하수 오로라 스킨 - 쪼리 happy', '밤하늘 스킨 쪼리 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/core/skin-night-sky-jjori-happy.png', FALSE, 3),
+('은하수 오로라 스킨 - 쪼리 idle', '밤하늘 스킨 쪼리 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/core/skin-night-sky-jjori-idle.png', FALSE, 3),
+('은하수 오로라 스킨 - 쪼리 sleepy', '밤하늘 스킨 쪼리 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/core/skin-night-sky-jjori-sleepy.png', FALSE, 3),
+('은하수 오로라 스킨 - 쪼리 hungry', '밤하늘 스킨 쪼리 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/status/skin-night-sky-jjori-hungry.png', FALSE, 3),
+('은하수 오로라 스킨 - 쪼리 lonely', '밤하늘 스킨 쪼리 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/status/skin-night-sky-jjori-lonely.png', FALSE, 3),
+('은하수 오로라 스킨 - 쪼리 low-energy', '밤하늘 스킨 쪼리 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/jjori/status/skin-night-sky-jjori-low-energy.png', FALSE, 3),
+('은하수 오로라 스킨 - 무무 happy', '밤하늘 스킨 무무 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/core/skin-night-sky-mumu-happy.png', FALSE, 2),
+('은하수 오로라 스킨 - 무무 idle', '밤하늘 스킨 무무 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/core/skin-night-sky-mumu-idle.png', FALSE, 2),
+('은하수 오로라 스킨 - 무무 sleepy', '밤하늘 스킨 무무 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/core/skin-night-sky-mumu-sleepy.png', FALSE, 2),
+('은하수 오로라 스킨 - 무무 hungry', '밤하늘 스킨 무무 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/status/skin-night-sky-mumu-hungry.png', FALSE, 2),
+('은하수 오로라 스킨 - 무무 lonely', '밤하늘 스킨 무무 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/status/skin-night-sky-mumu-lonely.png', FALSE, 2),
+('은하수 오로라 스킨 - 무무 low-energy', '밤하늘 스킨 무무 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/mumu/status/skin-night-sky-mumu-low-energy.png', FALSE, 2),
+('은하수 오로라 스킨 - 노바 happy', '밤하늘 스킨 노바 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/core/skin-night-sky-nova-happy.png', FALSE, 1),
+('은하수 오로라 스킨 - 노바 idle', '밤하늘 스킨 노바 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/core/skin-night-sky-nova-idle.png', FALSE, 1),
+('은하수 오로라 스킨 - 노바 sleepy', '밤하늘 스킨 노바 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/core/skin-night-sky-nova-sleepy.png', FALSE, 1),
+('은하수 오로라 스킨 - 노바 hungry', '밤하늘 스킨 노바 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/status/skin-night-sky-nova-hungry.png', FALSE, 1),
+('은하수 오로라 스킨 - 노바 lonely', '밤하늘 스킨 노바 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/status/skin-night-sky-nova-lonely.png', FALSE, 1),
+('은하수 오로라 스킨 - 노바 low-energy', '밤하늘 스킨 노바 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/night-sky/equipped/nova/status/skin-night-sky-nova-low-energy.png', FALSE, 1),
+
+('말랑 별빛 스킨', '말랑말랑하게 빛나는 별빛 분위기의 스킨입니다.', 'SKIN', 200, NULL, NULL, '/assets/skins/starlight/thumbnails/skin-starlight-thumbnail.png', TRUE, NULL),
+('말랑 별빛 스킨 - 쪼리 happy', '별빛 스킨 쪼리 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/core/skin-starlight-jjori-happy.png', FALSE, 3),
+('말랑 별빛 스킨 - 쪼리 idle', '별빛 스킨 쪼리 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/core/skin-starlight-jjori-idle.png', FALSE, 3),
+('말랑 별빛 스킨 - 쪼리 sleepy', '별빛 스킨 쪼리 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/core/skin-starlight-jjori-sleepy.png', FALSE, 3),
+('말랑 별빛 스킨 - 쪼리 hungry', '별빛 스킨 쪼리 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/status/skin-starlight-jjori-hungry.png', FALSE, 3),
+('말랑 별빛 스킨 - 쪼리 lonely', '별빛 스킨 쪼리 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/status/skin-starlight-jjori-lonely.png', FALSE, 3),
+('말랑 별빛 스킨 - 쪼리 low-energy', '별빛 스킨 쪼리 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/jjori/status/skin-starlight-jjori-low-energy.png', FALSE, 3),
+('말랑 별빛 스킨 - 무무 happy', '별빛 스킨 무무 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/core/skin-starlight-mumu-happy.png', FALSE, 2),
+('말랑 별빛 스킨 - 무무 idle', '별빛 스킨 무무 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/core/skin-starlight-mumu-idle.png', FALSE, 2),
+('말랑 별빛 스킨 - 무무 sleepy', '별빛 스킨 무무 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/core/skin-starlight-mumu-sleepy.png', FALSE, 2),
+('말랑 별빛 스킨 - 무무 hungry', '별빛 스킨 무무 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/status/skin-starlight-mumu-hungry.png', FALSE, 2),
+('말랑 별빛 스킨 - 무무 lonely', '별빛 스킨 무무 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/status/skin-starlight-mumu-lonely.png', FALSE, 2),
+('말랑 별빛 스킨 - 무무 low-energy', '별빛 스킨 무무 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/mumu/status/skin-starlight-mumu-low-energy.png', FALSE, 2),
+('말랑 별빛 스킨 - 노바 happy', '별빛 스킨 노바 happy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/core/skin-starlight-nova-happy.png', FALSE, 1),
+('말랑 별빛 스킨 - 노바 idle', '별빛 스킨 노바 idle 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/core/skin-starlight-nova-idle.png', FALSE, 1),
+('말랑 별빛 스킨 - 노바 sleepy', '별빛 스킨 노바 sleepy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/core/skin-starlight-nova-sleepy.png', FALSE, 1),
+('말랑 별빛 스킨 - 노바 hungry', '별빛 스킨 노바 hungry 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/status/skin-starlight-nova-hungry.png', FALSE, 1),
+('말랑 별빛 스킨 - 노바 lonely', '별빛 스킨 노바 lonely 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/status/skin-starlight-nova-lonely.png', FALSE, 1),
+('말랑 별빛 스킨 - 노바 low-energy', '별빛 스킨 노바 low-energy 이미지입니다.', 'SKIN', 0, NULL, NULL, '/assets/skins/starlight/equipped/nova/status/skin-starlight-nova-low-energy.png', FALSE, 1),
+
+('별사탕밥', '캐릭터의 배고픔을 채워주는 달콤한 별사탕밥입니다.', 'CONSUMABLE', 10, 30, 'FOOD', '/assets/items/consumables/item-star-candy-meal.png', TRUE, NULL),
+('구름 베개', '캐릭터의 피로를 풀어주는 푹신한 구름 베개입니다.', 'CONSUMABLE', 10, 40, 'REST', '/assets/items/consumables/item-cloud-pillow.png', TRUE, NULL),
+('별 장난감', '캐릭터의 애정을 올려주는 귀여운 별 장난감입니다.', 'CONSUMABLE', 10, 40, 'PLAY', '/assets/items/consumables/item-star-toy.png', TRUE, NULL);
