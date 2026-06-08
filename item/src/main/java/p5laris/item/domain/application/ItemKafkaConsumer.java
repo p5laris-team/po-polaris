@@ -1,5 +1,6 @@
 package p5laris.item.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,14 +35,26 @@ public class ItemKafkaConsumer {
     private final UserItemRepository userItemRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
+    
+    // 패키지 스키마가 분산되어 있을 때 클래스 로딩 충돌 방지를 위한 역직렬화 도구
+    private final ObjectMapper objectMapper;
 
     /**
      * 재화 차감이 성공적으로 완료되었음을 알리는 'star-piece-spent' 이벤트를 구독하여 처리합니다.
+     * 패키지 네임스페이스 간섭을 막기 위해 raw String payload를 파싱합니다.
      *
-     * @param event 재화 차감 성공 상세 데이터가 담긴 이벤트 DTO
+     * @param messagePayload 재화 차감 성공 상세 데이터 JSON 문자열
      */
     @KafkaListener(topics = "star-piece-spent", groupId = "item-group")
-    public void handleStarPieceSpent(StarPieceSpentEvent event) {
+    public void handleStarPieceSpent(String messagePayload) {
+        StarPieceSpentEvent event;
+        try {
+            event = objectMapper.readValue(messagePayload, StarPieceSpentEvent.class);
+        } catch (Exception e) {
+            log.error("[Kafka] 재화 차감 완료 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
+            return; // 파싱 에러 발생 시 리턴하여 후속 로직 예방
+        }
+
         log.info("[Kafka] 재화 차감 완료 수신 - 구매 ID: {}, 잔여 재화: {}, 트랜잭션 ID: {}",
                 event.getPurchaseId(), event.getRemainingStarPiece(), event.getTransactionId());
 
@@ -85,11 +98,20 @@ public class ItemKafkaConsumer {
 
     /**
      * 재화 차감이 실패했음을 알리는 'star-piece-spend-failed' 이벤트를 구독하여 처리합니다.
+     * 패키지 네임스페이스 간섭을 막기 위해 raw String payload를 파싱합니다.
      *
-     * @param event 재화 차감 실패 정보가 담긴 이벤트 DTO
+     * @param messagePayload 재화 차감 실패 정보 JSON 문자열
      */
     @KafkaListener(topics = "star-piece-spend-failed", groupId = "item-group")
-    public void handleStarPieceSpendFailed(StarPieceSpendFailedEvent event) {
+    public void handleStarPieceSpendFailed(String messagePayload) {
+        StarPieceSpendFailedEvent event;
+        try {
+            event = objectMapper.readValue(messagePayload, StarPieceSpendFailedEvent.class);
+        } catch (Exception e) {
+            log.error("[Kafka] 재화 차감 실패 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
+            return; // 파싱 에러 발생 시 리턴
+        }
+
         log.info("[Kafka] 재화 차감 실패 수신 - 구매 ID: {}, 실패 코드: {}",
                 event.getPurchaseId(), event.getErrorCode());
 

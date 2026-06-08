@@ -1,5 +1,6 @@
 package p5laris.user.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -29,14 +30,26 @@ public class UserKafkaConsumer {
 
     private final WalletService walletService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    
+    // 분산 환경의 서로 다른 DTO 패키지 충돌(__TypeId__ 불일치)을 해결하기 위한 수동 역직렬화 매퍼
+    private final ObjectMapper objectMapper;
 
     /**
      * 'item-purchase-requested' 토픽을 구독하여 사용자의 재화를 차감하는 비즈니스 메서드입니다.
+     * 패키지 독립성을 확보하기 위해 raw String payload를 수신하여 수동으로 역직렬화합니다.
      *
-     * @param event 아이템 구매 요청 정보가 담긴 이벤트 DTO
+     * @param messagePayload JSON 포맷의 아이템 구매 요청 정보 문자열
      */
     @KafkaListener(topics = "item-purchase-requested", groupId = "user-group")
-    public void handleItemPurchaseRequest(ItemPurchaseRequestedEvent event) {
+    public void handleItemPurchaseRequest(String messagePayload) {
+        ItemPurchaseRequestedEvent event;
+        try {
+            event = objectMapper.readValue(messagePayload, ItemPurchaseRequestedEvent.class);
+        } catch (Exception e) {
+            log.error("[Kafka] 구매 요청 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
+            return; // 파싱 실패 시 처리 중단
+        }
+
         log.info("[Kafka] 구매 요청 수신 - 구매 ID: {}, 사용자 ID: {}, 가격: {}",
                 event.getPurchaseId(), event.getUserId(), event.getPrice());
 

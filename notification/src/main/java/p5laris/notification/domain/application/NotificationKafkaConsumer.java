@@ -1,5 +1,6 @@
 package p5laris.notification.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.p5laris.proto.notification.v1.NotificationType;
 import com.p5laris.proto.notification.v1.SendPushNotificationRequest;
 import lombok.RequiredArgsConstructor;
@@ -26,19 +27,31 @@ public class NotificationKafkaConsumer {
 
     private final NotificationService notificationService;
     private final FcmSenderService fcmSenderService;
+    
+    // 타 서비스 모듈 간의 DTO 패키지 충돌(__TypeId__) 우회를 위한 역직렬화 도구
+    private final ObjectMapper objectMapper;
 
     /**
      * 'notification-requests' 토픽으로 인입되는 푸시 발송 메시지를 처리하는 리스너 메서드입니다.
+     * 패키지 네임스페이스 격리를 확보하기 위해 String 타입의 raw payload를 파싱합니다.
      *
-     * @param event 푸시 정보가 담긴 알림 요청 DTO
+     * @param messagePayload 푸시 정보 JSON 포맷 문자열
      * @param idempotencyKey 중복 처리 방지용 멱등키 (Kafka Message Key)
      */
     @KafkaListener(topics = "notification-requests", groupId = "notification-group")
     public void consumeNotificationRequest(
-            NotificationRequestEvent event,
+            String messagePayload,
             @Header(KafkaHeaders.RECEIVED_KEY) String idempotencyKey
     ) {
-        log.info("[Kafka Consumer] 알림 발송 요청 수신 - 사용자: {}, 제목: {}, 타입: {}, 멱등키: {}", 
+        NotificationRequestEvent event;
+        try {
+            event = objectMapper.readValue(messagePayload, NotificationRequestEvent.class);
+        } catch (Exception e) {
+            log.error("[Kafka] 알림 발송 요청 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}, 멱등키: {}", messagePayload, idempotencyKey, e);
+            return; // 역직렬화 오류 시 중단
+        }
+
+        log.info("[Kafka] 알림 발송 요청 수신 - 사용자: {}, 제목: {}, 타입: {}, 멱등키: {}", 
                 event.userId(), event.title(), event.notificationType(), idempotencyKey);
         
         try {
@@ -65,9 +78,9 @@ public class NotificationKafkaConsumer {
                     notification.getNotificationType()
             );
 
-            log.info("[Kafka Consumer] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
+            log.info("[Kafka] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
         } catch (Exception e) {
-            log.error("[Kafka Consumer] 알림 발송 처리 중 예외 발생 - 멱등키: {}", idempotencyKey, e);
+            log.error("[Kafka] 알림 발송 처리 중 예외 발생 - 멱등키: {}", idempotencyKey, e);
             // 메시지 유실 방지 및 무한 롤백 차단을 위해 catch 후 로깅 처리
         }
     }

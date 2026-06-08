@@ -20,8 +20,7 @@ spring:
       auto-offset-reset: earliest
       # 메시지 Key 역직렬화 클래스 (멱등키 String)
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      # 메시지 Value 역직렬화 클래스 (Jackson JSON Deserializer)
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
         # 역직렬화 시 신뢰할 수 있는 패키지 범위 지정 (와일드카드 허용)
         spring.json.trusted.packages: "*"
