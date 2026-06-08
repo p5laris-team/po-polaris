@@ -35,9 +35,9 @@ DELETE FROM star_piece_transactions WHERE user_id >= 900001;
 DELETE FROM wallets WHERE user_id >= 900001;
 DELETE FROM onboarding_profiles WHERE user_id >= 900001;
 DELETE FROM attendance_records WHERE user_id >= 900001;
-DELETE FROM payment_transactions WHERE user_id >= 900001;
+DELETE FROM payment_transactions WHERE payment_order_id IN (SELECT id FROM payment_orders WHERE user_id >= 900001);
 DELETE FROM payment_orders WHERE user_id >= 900001;
-DELETE FROM outbox_events WHERE aggregate_id >= 900001;
+DELETE FROM user_outbox_events WHERE aggregate_id >= 900001;
 DELETE FROM users WHERE id >= 900001 OR email LIKE 'simulation_test_%';
 COMMIT;
 
@@ -57,6 +57,16 @@ COMMIT;
 -- =========================================================================
 -- [3] CHARACTER / SHARE (캐릭터 및 SNS 공유) 데이터베이스 세션에서 실행
 -- =========================================================================
+
+-- 3-1) 공유 보상 사용자별 하루 1회 수령 제한 검사 (ERD 1.5)
+-- 결과 행이 0건이어야 정상입니다. (하루에 reward_paid가 여러 개 지급된 경우 추적)
+SELECT user_id, share_date, COUNT(*) 
+FROM share_logs 
+WHERE reward_paid = true 
+GROUP BY user_id, share_date 
+HAVING COUNT(*) > 1;
+
+-- 3-2) 가상 테스트 데이터 삭제 (롤백)
 BEGIN;
 DELETE FROM share_logs WHERE user_id >= 900001;
 DELETE FROM share_cards WHERE user_id >= 900001;
@@ -94,4 +104,28 @@ DELETE FROM notification_push_deliveries WHERE user_id >= 900001;
 DELETE FROM notifications WHERE user_id >= 900001;
 DELETE FROM fcm_device_tokens WHERE user_id >= 900001;
 DELETE FROM notification_settings WHERE user_id >= 900001;
+COMMIT;
+
+
+-- =========================================================================
+-- [7] AI (AI 생성 및 사용 로그) 데이터베이스 세션에서 실행
+-- =========================================================================
+
+-- 7-1) AI Mock 장애 주입에 따른 오류 로그(Fallback 발동 전적) 모니터링
+-- 장애(Chaos) 주입 기간 동안 FAIL 또는 TIMEOUT 에러 로그 건수 확인
+SELECT status, error_type, COUNT(*) 
+FROM ai_usage_logs 
+WHERE user_id >= 900001 AND (status = 'FAIL' OR error_type IS NOT NULL)
+GROUP BY status, error_type;
+
+-- 7-2) AI 미션 Fallback 사용 비율 모니터링 (Circuit Breaker 작동 여부 검증)
+SELECT fallback_used, COUNT(*) 
+FROM ai_mission_generations 
+WHERE user_id >= 900001
+GROUP BY fallback_used;
+
+-- 7-3) 가상 테스트 데이터 삭제 (롤백)
+BEGIN;
+DELETE FROM ai_usage_logs WHERE user_id >= 900001;
+DELETE FROM ai_mission_generations WHERE user_id >= 900001;
 COMMIT;
