@@ -1,4 +1,4 @@
-package p5laris.notification.domain.application;
+package p5laris.notification.domain.application.event;
 
 public record NotificationDeliveryDecision(
         boolean sendable,

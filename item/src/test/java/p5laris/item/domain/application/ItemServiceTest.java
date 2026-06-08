@@ -47,7 +47,7 @@ class ItemServiceTest {
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private com.p5laris.proto.user.v1.WalletServiceGrpc.WalletServiceBlockingStub walletStub;
+    private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
 
     @Mock
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
@@ -66,10 +66,8 @@ class ItemServiceTest {
         });
 
         lenient().when(itemPurchaseWalletProperties.getDeadlineMs()).thenReturn(1000L);
-        lenient().when(walletStub.withDeadlineAfter(anyLong(), any(TimeUnit.class))).thenReturn(walletStub);
 
         ReflectionTestUtils.setField(itemService, "cdnBaseUrl", "https://d24c6my56k1w5v.cloudfront.net");
-        ReflectionTestUtils.setField(itemService, "walletStub", walletStub);
     }
 
     @Test
@@ -207,7 +205,7 @@ class ItemServiceTest {
     }
 
     @Test
-    @DisplayName("purchaseItem - 신규 구매 시 지갑 차감, 인벤토리 적재, 구매 이력 저장 후 올바른 purchaseId 반환")
+    @DisplayName("purchaseItem - 신규 구매 시 PENDING 등록 및 카프카 이벤트 발행 후 올바른 purchaseId 반환")
     void purchaseItem_newPurchase_success() {
         // given
         Long userId = 1L;
@@ -232,12 +230,7 @@ class ItemServiceTest {
                 .id(100L)
                 .userId(userId)
                 .item(item)
-                .quantity(1)
-                .build();
-
-        com.p5laris.proto.user.v1.SpendStarPieceResponse spendResponse = com.p5laris.proto.user.v1.SpendStarPieceResponse.newBuilder()
-                .setStarPiece(940)
-                .setTransactionId(12345L)
+                .quantity(0)
                 .build();
 
         when(userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey))
@@ -246,9 +239,6 @@ class ItemServiceTest {
                 .thenReturn(Optional.of(item));
         when(userItemRepository.findByUserIdAndItemId(userId, itemId))
                 .thenReturn(Optional.empty());
-        
-        when(walletStub.spendStarPiece(any(com.p5laris.proto.user.v1.SpendStarPieceRequest.class)))
-                .thenReturn(spendResponse);
         
         when(userItemRepository.save(any(UserItem.class)))
                 .thenReturn(userItem);
@@ -260,15 +250,12 @@ class ItemServiceTest {
                 .itemId(itemId)
                 .quantity(1)
                 .price(60)
-                .starPiece(940)
-                .transactionId(12345L)
                 .idempotencyKey(idempotencyKey)
+                .status("PENDING")
                 .build();
 
         when(userItemPurchaseRepository.save(any(UserItemPurchase.class)))
                 .thenReturn(savedPurchase);
-        when(userItemPurchaseRepository.findById(500L))
-                .thenReturn(Optional.of(savedPurchase));
 
         // when
         com.p5laris.proto.item.v1.PurchaseItemResponse response = itemService.purchaseItem(request);
@@ -279,11 +266,11 @@ class ItemServiceTest {
         assertThat(response.getName()).isEqualTo("말랑 별빛 스킨");
         assertThat(response.getQuantity()).isEqualTo(1);
         assertThat(response.getPrice()).isEqualTo(60);
-        assertThat(response.getStarPiece()).isEqualTo(940);
-        assertThat(response.getTransactionId()).isEqualTo(12345L);
+        assertThat(response.getStarPiece()).isEqualTo(0);
+        assertThat(response.getTransactionId()).isEqualTo(0L);
 
-        verify(walletStub, times(1)).spendStarPiece(any());
-        verify(userItemRepository, times(2)).save(any());
-        verify(userItemPurchaseRepository, times(2)).save(any());
+        verify(kafkaTemplate, times(1)).send(eq("item-purchase-requested"), eq(idempotencyKey), any());
+        verify(userItemRepository, times(1)).save(any());
+        verify(userItemPurchaseRepository, times(1)).save(any());
     }
 }
