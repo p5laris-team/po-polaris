@@ -6,7 +6,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 
 import java.util.Map;
 
@@ -23,7 +22,7 @@ public class MissionNotificationEventListener {
     private static final String MISSION_OFFERED = "MISSION_OFFERED";
     private static final String MISSION_TITLE_KEY = "missionTitle";
 
-    private final NotificationPushClient notificationPushClient;
+    private final MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -39,7 +38,7 @@ public class MissionNotificationEventListener {
         }
 
         try {
-            notificationPushClient.sendMissionOfferNotification(
+            missionNotificationKafkaPublisher.sendMissionOfferNotification(
                     event.userId(),
                     event.refId(),
                     readMissionTitle(event.metadata())

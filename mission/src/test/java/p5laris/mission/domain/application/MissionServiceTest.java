@@ -46,7 +46,7 @@ import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
-import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
+import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
@@ -180,7 +180,7 @@ class MissionServiceTest {
     private OnboardingProfileClient onboardingProfileClient;
 
     @MockitoBean
-    private NotificationPushClient notificationPushClient;
+    private MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
 
     @BeforeEach
     void setUp() {
@@ -189,7 +189,7 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterExpClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterExpClient, characterProfileClient, onboardingProfileClient, missionNotificationKafkaPublisher);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
@@ -1040,7 +1040,7 @@ class MissionServiceTest {
                 10,
                 "MISSION_CHARACTER_EXP:" + created.getMission().getId()
         );
-        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1267,7 +1267,7 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
-        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1381,7 +1381,7 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
-        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1396,7 +1396,7 @@ class MissionServiceTest {
                 .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         doThrow(new RuntimeException("notification unavailable"))
-                .when(notificationPushClient)
+                .when(missionNotificationKafkaPublisher)
                 .sendMissionRewardRecoveredNotification(USER_ID, created.getMission().getId(), 10);
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
@@ -1418,7 +1418,7 @@ class MissionServiceTest {
         assertThat(succeededCount).isEqualTo(1);
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
-        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
