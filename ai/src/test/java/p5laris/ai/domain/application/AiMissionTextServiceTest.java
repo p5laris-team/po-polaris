@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(properties = {
         "grpc.server.port=0",
         "ai.provider.enabled=false",
+        "spring.ai.model.chat=none",
         "spring.ai.model.embedding.text=none",
         "ai.embedding.enabled=false",
         "ai.embedding.model=gemini-embedding-001",

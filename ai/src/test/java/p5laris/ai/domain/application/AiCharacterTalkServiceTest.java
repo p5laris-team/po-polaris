@@ -3,8 +3,12 @@ package p5laris.ai.domain.application;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.CharacterTalkStreamMetadata;
+import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
 import p5laris.ai.domain.application.generator.AiRateLimiter;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
+import p5laris.ai.domain.domain.entity.CharacterTalkSession;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.domain.policy.CharacterTalkValidationPolicy;
@@ -17,6 +21,7 @@ import p5laris.ai.domain.infrastructure.provider.GeminiCharacterTalkGenerator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +32,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class AiCharacterTalkServiceTest {
 
@@ -86,7 +92,7 @@ class AiCharacterTalkServiceTest {
             Consumer<String> consumer = invocation.getArgument(1);
             consumer.accept("작은 별빛 하나만 ");
             consumer.accept("챙겨도 괜찮아.");
-            return null;
+            return AiTokenUsage.empty();
         }).when(generator).stream(any(), any());
 
         service.streamCharacterTalk(command("NOVA", "오늘 좀 피곤해"), emitter);
@@ -111,7 +117,7 @@ class AiCharacterTalkServiceTest {
             consumer.accept("무... 무무. ");
             assertTrue(emitter.chunks.isEmpty());
             consumer.accept("(해석: 무무가 잠깐 쉬어도 괜찮다고 하는 것 같아요.)");
-            return null;
+            return AiTokenUsage.empty();
         }).when(generator).stream(any(), any());
 
         service.streamCharacterTalk(command("MUMU", "오늘 좀 피곤해"), emitter);
@@ -135,13 +141,30 @@ class AiCharacterTalkServiceTest {
         AiCharacterTalkProperties talkProperties = new AiCharacterTalkProperties();
         talkProperties.setMaxUserMessageLength(maxUserMessageLength);
         talkProperties.setMaxReplyLength(350);
+        CharacterTalkHistoryService historyService = mock(CharacterTalkHistoryService.class);
+        when(historyService.prepare(any())).thenReturn(preparedContext());
 
         return new AiCharacterTalkService(
                 providerProperties,
                 rateLimiter,
                 new AiProviderCircuitBreaker(new AiCircuitBreakerProperties()),
                 generator,
-                new CharacterTalkValidationPolicy(talkProperties)
+                new CharacterTalkValidationPolicy(talkProperties),
+                historyService
+        );
+    }
+
+    private PreparedCharacterTalkContext preparedContext() {
+        return new PreparedCharacterTalkContext(
+                mock(CharacterTalkSession.class),
+                "session-1",
+                true,
+                LocalDateTime.now().plusMinutes(30),
+                "[]",
+                "[]",
+                6,
+                3,
+                0
         );
     }
 
@@ -163,6 +186,12 @@ class AiCharacterTalkServiceTest {
         private boolean completed;
         private boolean fallbackUsed;
         private AiErrorType errorType;
+        private CharacterTalkStreamMetadata metadata;
+
+        @Override
+        public void emitMeta(CharacterTalkStreamMetadata metadata) {
+            this.metadata = metadata;
+        }
 
         @Override
         public void emitDelta(String text) {
@@ -170,7 +199,7 @@ class AiCharacterTalkServiceTest {
         }
 
         @Override
-        public void complete(boolean fallbackUsed, AiErrorType errorType) {
+        public void complete(boolean fallbackUsed, AiErrorType errorType, AiTokenUsage tokenUsage) {
             this.completed = true;
             this.fallbackUsed = fallbackUsed;
             this.errorType = errorType;

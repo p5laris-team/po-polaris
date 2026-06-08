@@ -37,6 +37,8 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
       timeout: ${REDIS_TIMEOUT}
+      repositories:
+        enabled: false
 
   datasource:
     url: ${DB_URL}
@@ -118,6 +120,14 @@ ai:
     max-user-message-length: ${AI_CHARACTER_TALK_MAX_USER_MESSAGE_LENGTH:300}
     max-reply-length: ${AI_CHARACTER_TALK_MAX_REPLY_LENGTH:350}
     tool-deadline-ms: ${AI_CHARACTER_TALK_TOOL_DEADLINE_MS:2500}
+    session-ttl-minutes: ${AI_CHARACTER_TALK_SESSION_TTL_MINUTES:30}
+    history-max-turns: ${AI_CHARACTER_TALK_HISTORY_MAX_TURNS:6}
+    memory-search-top-k: ${AI_CHARACTER_TALK_MEMORY_SEARCH_TOP_K:3}
+    memory-similarity-threshold: ${AI_CHARACTER_TALK_MEMORY_SIMILARITY_THRESHOLD:0.0}
+    message-retention-hours: ${AI_CHARACTER_TALK_MESSAGE_RETENTION_HOURS:24}
+    session-retention-days: ${AI_CHARACTER_TALK_SESSION_RETENTION_DAYS:30}
+    cleanup-enabled: ${AI_CHARACTER_TALK_CLEANUP_ENABLED:true}
+    cleanup-fixed-delay-ms: ${AI_CHARACTER_TALK_CLEANUP_FIXED_DELAY_MS:3600000}
 
 management:
   endpoints:
