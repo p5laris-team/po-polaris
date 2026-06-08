@@ -33,3 +33,10 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
       - kafka
+
+  k6:
+    image: grafana/k6:latest
+    container_name: k6-simulation
+    volumes:
+      - ./simulation:/io
+    entrypoint: ["k6", "run", "/io/k6-simulation-script.js"]
