@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(properties = {
         "grpc.server.port=0",
+        "spring.ai.model.chat=none",
         "spring.ai.model.embedding.text=none",
         "ai.embedding.enabled=false",
         "ai.embedding.model=gemini-embedding-001",
