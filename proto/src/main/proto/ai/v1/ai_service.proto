@@ -85,6 +85,7 @@ message StreamCharacterTalkRequest {
   string interaction_type = 6;
   string character_context_json = 7;
   string request_id = 8;
+  string session_id = 9;
 }
 
 message StreamCharacterTalkResponse {
@@ -93,6 +94,15 @@ message StreamCharacterTalkResponse {
   bool fallback_used = 3;
   AiErrorType error_type = 4;
   string request_id = 5;
+  string session_id = 6;
+  bool new_session = 7;
+  string expires_at = 8;
+  int32 history_window_turns = 9;
+  int32 memory_search_top_k = 10;
+  optional int32 actual_prompt_tokens = 11;
+  optional int32 actual_completion_tokens = 12;
+  optional int32 actual_total_tokens = 13;
+  int32 memory_hit_count = 14;
 }
 
 enum CharacterTalkStreamEventType {
@@ -100,6 +110,7 @@ enum CharacterTalkStreamEventType {
   CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA = 1;
   CHARACTER_TALK_STREAM_EVENT_TYPE_DONE = 2;
   CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR = 3;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_META = 4;
 }
 
 enum AiGenerationStatus {

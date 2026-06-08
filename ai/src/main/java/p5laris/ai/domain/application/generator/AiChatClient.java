@@ -22,4 +22,13 @@ public interface AiChatClient {
     default Flux<String> streamPlainTextWithTools(String systemPrompt, String userPrompt, Object... tools) {
         return streamPlainText(systemPrompt, userPrompt);
     }
+
+    default Flux<AiChatStreamChunk> streamPlainTextWithToolsAndUsage(
+            String systemPrompt,
+            String userPrompt,
+            Object... tools
+    ) {
+        return streamPlainTextWithTools(systemPrompt, userPrompt, tools)
+                .map(AiChatStreamChunk::text);
+    }
 }

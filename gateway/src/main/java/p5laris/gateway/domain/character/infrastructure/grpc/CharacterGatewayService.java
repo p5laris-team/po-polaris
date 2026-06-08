@@ -308,8 +308,9 @@ public class CharacterGatewayService {
         CharacterTalkLimitResult limitResult = null;
         try {
             limitResult = characterTalkDailyLimiter.acquire(userId);
-            sendEvent(emitter, "meta", buildTalkMeta(requestId, context, limitResult));
             if (!limitResult.available()) {
+                sendEvent(emitter, "meta", buildTalkMeta(requestId, context, limitResult));
+                streamState.metaSent = true;
                 sendEvent(emitter, "delta", Map.of("text", limitFallbackTalk(
                         context.getCharacterTypeCode(),
                         limitResult.talkStatus()
@@ -323,7 +324,7 @@ public class CharacterGatewayService {
 
             Iterator<StreamCharacterTalkResponse> responses = streamCharacterTalk(userId, request, requestId, context);
             while (responses.hasNext()) {
-                forwardAiTalkEvent(emitter, responses.next(), streamState, limitResult);
+                forwardAiTalkEvent(emitter, responses.next(), streamState, limitResult, context);
             }
             if (!streamState.doneSent) {
                 sendEvent(emitter, "done", buildTalkDone(
@@ -339,6 +340,10 @@ public class CharacterGatewayService {
             log.warn("별친구 대화 SSE 처리 중 fallback을 사용합니다. requestId={}, characterId={}, grpcStatus={}, 예외클래스={}",
                     requestId, context.getCharacterId(), status.getCode(), e.getClass().getSimpleName());
             try {
+                if (!streamState.metaSent) {
+                    sendEvent(emitter, "meta", buildTalkMeta(requestId, context, limitResult));
+                    streamState.metaSent = true;
+                }
                 if (!streamState.deltaSent) {
                     sendEvent(emitter, "delta", Map.of("text", fallbackTalk(context.getCharacterTypeCode())));
                 }
@@ -374,6 +379,7 @@ public class CharacterGatewayService {
                         .setInteractionType(request != null && request.interactionType() != null
                                 ? request.interactionType()
                                 : "TAP")
+                        .setSessionId(request != null && request.sessionId() != null ? request.sessionId() : "")
                         .setCharacterContextJson(toCharacterContextJson(context))
                         .setRequestId(requestId)
                         .build()
@@ -384,11 +390,22 @@ public class CharacterGatewayService {
             SseEmitter emitter,
             StreamCharacterTalkResponse response,
             TalkStreamState streamState,
-            CharacterTalkLimitResult limitResult
+            CharacterTalkLimitResult limitResult,
+            GetCharacterTalkContextResponse context
     ) throws IOException {
         CharacterTalkStreamEventType eventType = response.getEventType();
+        if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_META) {
+            sendEvent(emitter, "meta", buildTalkMeta(response.getRequestId(), context, limitResult, response));
+            streamState.metaSent = true;
+            return;
+        }
+
         if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA) {
             if (!response.getText().isBlank()) {
+                if (!streamState.metaSent) {
+                    sendEvent(emitter, "meta", buildTalkMeta(response.getRequestId(), context, limitResult));
+                    streamState.metaSent = true;
+                }
                 sendEvent(emitter, "delta", Map.of("text", response.getText()));
                 streamState.deltaSent = true;
             }
@@ -397,9 +414,7 @@ public class CharacterGatewayService {
 
         if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DONE) {
             sendEvent(emitter, "done", buildTalkDone(
-                    response.getRequestId(),
-                    response.getFallbackUsed(),
-                    response.getErrorType(),
+                    response,
                     limitResult
             ));
             streamState.doneSent = true;
@@ -434,6 +449,22 @@ public class CharacterGatewayService {
         return meta;
     }
 
+    private Map<String, Object> buildTalkMeta(
+            String requestId,
+            GetCharacterTalkContextResponse context,
+            CharacterTalkLimitResult limitResult,
+            StreamCharacterTalkResponse aiMeta
+    ) {
+        Map<String, Object> meta = buildTalkMeta(requestId, context, limitResult);
+        meta.put("sessionId", aiMeta.getSessionId());
+        meta.put("newSession", aiMeta.getNewSession());
+        meta.put("expiresAt", aiMeta.getExpiresAt());
+        meta.put("historyWindowTurns", aiMeta.getHistoryWindowTurns());
+        meta.put("memorySearchTopK", aiMeta.getMemorySearchTopK());
+        meta.put("memoryHitCount", aiMeta.getMemoryHitCount());
+        return meta;
+    }
+
     private Map<String, Object> buildTalkDone(
             String requestId,
             boolean fallbackUsed,
@@ -446,6 +477,34 @@ public class CharacterGatewayService {
         done.putAll(toTalkLimitContext(limitResult));
         if (errorType != null && errorType != AiErrorType.AI_ERROR_TYPE_UNSPECIFIED) {
             done.put("errorType", errorType.name());
+        }
+        return done;
+    }
+
+    private Map<String, Object> buildTalkDone(
+            StreamCharacterTalkResponse response,
+            CharacterTalkLimitResult limitResult
+    ) {
+        Map<String, Object> done = buildTalkDone(
+                response.getRequestId(),
+                response.getFallbackUsed(),
+                response.getErrorType(),
+                limitResult
+        );
+        if (!response.getSessionId().isBlank()) {
+            done.put("sessionId", response.getSessionId());
+        }
+        if (response.hasActualPromptTokens()) {
+            done.put("actualPromptTokens", response.getActualPromptTokens());
+        }
+        if (response.hasActualCompletionTokens()) {
+            done.put("actualCompletionTokens", response.getActualCompletionTokens());
+        }
+        if (response.hasActualTotalTokens()) {
+            done.put("actualTotalTokens", response.getActualTotalTokens());
+        }
+        if (response.getMemoryHitCount() > 0) {
+            done.put("memoryHitCount", response.getMemoryHitCount());
         }
         return done;
     }
@@ -586,6 +645,7 @@ public class CharacterGatewayService {
     }
 
     private static class TalkStreamState {
+        private boolean metaSent;
         private boolean deltaSent;
         private boolean doneSent;
     }

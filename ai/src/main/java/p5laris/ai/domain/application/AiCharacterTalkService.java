@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
 import p5laris.ai.domain.application.generator.AiRateLimiter;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
@@ -21,7 +23,7 @@ import java.util.Locale;
 /**
  * 별친구 대화 생성 유스케이스다.
  *
- * 대화 원문은 저장하지 않고, provider 호출 직전에 rate limit/서킷 브레이커를 적용한다.
+ * 최근 대화는 세션 단위로 짧게 보관하고, provider 호출 직전에 rate limit/서킷 브레이커를 적용한다.
  * provider streaming이 실패해도 사용자 흐름은 끊지 않고 캐릭터별 fallback 또는 done 이벤트로 닫는다.
  */
 @Service
@@ -34,22 +36,49 @@ public class AiCharacterTalkService {
     private final AiProviderCircuitBreaker aiProviderCircuitBreaker;
     private final GeminiCharacterTalkGenerator geminiCharacterTalkGenerator;
     private final CharacterTalkValidationPolicy characterTalkValidationPolicy;
+    private final CharacterTalkHistoryService characterTalkHistoryService;
 
     public void streamCharacterTalk(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
         validateRequest(command);
+        PreparedCharacterTalkContext context = null;
+        CharacterTalkGenerationCommand runtimeCommand = command;
+        RecordingCharacterTalkStreamEmitter recordingEmitter = new RecordingCharacterTalkStreamEmitter(emitter);
 
         try {
             characterTalkValidationPolicy.validateUserMessage(command.userMessage());
-            streamReply(command, emitter);
-            emitter.complete(false, null);
+            context = characterTalkHistoryService.prepare(command);
+            runtimeCommand = command.withConversationContext(
+                    context.sessionId(),
+                    context.conversationHistoryJson(),
+                    context.memoryContextJson()
+            );
+            emitter.emitMeta(context.toMetadata(command.requestId()));
+            AiTokenUsage tokenUsage = streamReply(runtimeCommand, recordingEmitter);
+            characterTalkHistoryService.recordAssistantResponse(
+                    context,
+                    runtimeCommand,
+                    recordingEmitter.text(),
+                    false,
+                    tokenUsage
+            );
+            emitter.complete(false, null, tokenUsage);
         } catch (FallbackRequiredException e) {
             log.warn("별친구 대화 생성 fallback 사용. requestId={}, characterType={}, errorType={}, reason={}",
                     command.requestId(), command.characterType(), e.getErrorType(), e.getMessage());
-            completeWithFallback(command, emitter, e.getErrorType());
+            completeWithFallback(runtimeCommand, recordingEmitter, e.getErrorType());
+            if (context != null) {
+                characterTalkHistoryService.recordAssistantResponse(
+                        context,
+                        runtimeCommand,
+                        recordingEmitter.text(),
+                        true,
+                        AiTokenUsage.empty()
+                );
+            }
         }
     }
 
-    private void streamReply(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
+    private AiTokenUsage streamReply(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
         AiProviderType providerType = aiProviderProperties.providerType();
         if (!aiProviderProperties.isExternalEnabled()) {
             throw new FallbackRequiredException(AiErrorType.PROVIDER_ERROR, "외부 AI provider가 비활성화되어 있습니다.");
@@ -59,15 +88,15 @@ public class AiCharacterTalkService {
         }
 
         aiRateLimiter.checkAllowed(command.userId(), providerType, aiProviderProperties.resolvedModel());
-        aiProviderCircuitBreaker.execute(
+        return aiProviderCircuitBreaker.execute(
                 providerType,
                 aiProviderProperties.resolvedModel(),
                 command.requestId(),
                 () -> {
                     StreamingReplyGuard guard = new StreamingReplyGuard(command, emitter);
-                    geminiCharacterTalkGenerator.stream(command, guard::accept);
+                    AiTokenUsage tokenUsage = geminiCharacterTalkGenerator.stream(command, guard::accept);
                     guard.finish();
-                    return null;
+                    return tokenUsage;
                 }
         );
     }
@@ -101,7 +130,7 @@ public class AiCharacterTalkService {
             characterTalkValidationPolicy.validateReply(fallbackReply, command.characterType());
             emitter.emitDelta(fallbackReply);
         }
-        emitter.complete(true, errorType);
+        emitter.complete(true, errorType, AiTokenUsage.empty());
     }
 
     private String normalize(String value) {
@@ -205,6 +234,43 @@ public class AiCharacterTalkService {
                     || character == '!'
                     || character == '…'
                     || Character.isWhitespace(character);
+        }
+    }
+
+    private static class RecordingCharacterTalkStreamEmitter implements CharacterTalkStreamEmitter {
+
+        private final CharacterTalkStreamEmitter delegate;
+        private final StringBuilder text = new StringBuilder();
+
+        private RecordingCharacterTalkStreamEmitter(CharacterTalkStreamEmitter delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void emitMeta(p5laris.ai.domain.application.dto.CharacterTalkStreamMetadata metadata) {
+            delegate.emitMeta(metadata);
+        }
+
+        @Override
+        public void emitDelta(String text) {
+            if (text != null) {
+                this.text.append(text);
+            }
+            delegate.emitDelta(text);
+        }
+
+        @Override
+        public void complete(boolean fallbackUsed, AiErrorType errorType, AiTokenUsage tokenUsage) {
+            delegate.complete(fallbackUsed, errorType, tokenUsage);
+        }
+
+        @Override
+        public boolean hasEmittedDelta() {
+            return delegate.hasEmittedDelta();
+        }
+
+        private String text() {
+            return text.toString();
         }
     }
 }

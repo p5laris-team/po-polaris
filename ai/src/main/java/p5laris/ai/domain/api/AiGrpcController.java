@@ -22,6 +22,8 @@ import p5laris.ai.domain.application.AiCharacterTalkService;
 import p5laris.ai.domain.application.AiMissionTextService;
 import p5laris.ai.domain.application.AiTextEmbeddingService;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.CharacterTalkStreamMetadata;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
@@ -154,7 +156,10 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
                 request.getUserMessage(),
                 request.getInteractionType(),
                 request.getCharacterContextJson(),
-                request.getRequestId()
+                request.getRequestId(),
+                request.getSessionId(),
+                "[]",
+                "[]"
         );
     }
 
@@ -232,6 +237,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         private final String requestId;
         private final StreamObserver<StreamCharacterTalkResponse> responseObserver;
         private boolean emittedDelta;
+        private CharacterTalkStreamMetadata metadata;
 
         private GrpcCharacterTalkStreamEmitter(
                 String requestId,
@@ -239,6 +245,22 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         ) {
             this.requestId = requestId;
             this.responseObserver = responseObserver;
+        }
+
+        @Override
+        public void emitMeta(CharacterTalkStreamMetadata metadata) {
+            this.metadata = metadata;
+            StreamCharacterTalkResponse response = StreamCharacterTalkResponse.newBuilder()
+                    .setEventType(CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_META)
+                    .setRequestId(metadata.requestId())
+                    .setSessionId(metadata.sessionId())
+                    .setNewSession(metadata.newSession())
+                    .setExpiresAt(metadata.expiresAt().toString())
+                    .setHistoryWindowTurns(metadata.historyWindowTurns())
+                    .setMemorySearchTopK(metadata.memorySearchTopK())
+                    .setMemoryHitCount(metadata.memoryHitCount())
+                    .build();
+            responseObserver.onNext(response);
         }
 
         @Override
@@ -255,11 +277,33 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         }
 
         @Override
-        public void complete(boolean fallbackUsed, p5laris.ai.domain.domain.enums.AiErrorType errorType) {
+        public void complete(
+                boolean fallbackUsed,
+                p5laris.ai.domain.domain.enums.AiErrorType errorType,
+                AiTokenUsage tokenUsage
+        ) {
             StreamCharacterTalkResponse.Builder builder = StreamCharacterTalkResponse.newBuilder()
                     .setEventType(CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DONE)
                     .setFallbackUsed(fallbackUsed)
                     .setRequestId(requestId);
+
+            if (metadata != null) {
+                builder.setSessionId(metadata.sessionId())
+                        .setExpiresAt(metadata.expiresAt().toString())
+                        .setHistoryWindowTurns(metadata.historyWindowTurns())
+                        .setMemorySearchTopK(metadata.memorySearchTopK())
+                        .setMemoryHitCount(metadata.memoryHitCount());
+            }
+
+            if (tokenUsage != null && tokenUsage.hasPromptTokens()) {
+                builder.setActualPromptTokens(tokenUsage.promptTokens());
+            }
+            if (tokenUsage != null && tokenUsage.hasCompletionTokens()) {
+                builder.setActualCompletionTokens(tokenUsage.completionTokens());
+            }
+            if (tokenUsage != null && tokenUsage.hasTotalTokens()) {
+                builder.setActualTotalTokens(tokenUsage.totalTokens());
+            }
 
             if (errorType != null) {
                 builder.setErrorType(toProtoErrorType(errorType));

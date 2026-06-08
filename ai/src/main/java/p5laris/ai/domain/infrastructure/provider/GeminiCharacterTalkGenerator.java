@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.generator.AiChatStreamChunk;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
@@ -27,21 +29,37 @@ public class GeminiCharacterTalkGenerator {
     private final AiCharacterTalkProperties properties;
     private final CharacterTalkToolsFactory characterTalkToolsFactory;
 
-    public void stream(CharacterTalkGenerationCommand command, Consumer<String> chunkConsumer) {
+    public AiTokenUsage stream(CharacterTalkGenerationCommand command, Consumer<String> chunkConsumer) {
         try {
-            aiChatClient.streamPlainTextWithTools(
+            TokenUsageCollector usageCollector = new TokenUsageCollector();
+            aiChatClient.streamPlainTextWithToolsAndUsage(
                             systemPrompt(),
                             userPrompt(command),
                             characterTalkToolsFactory.create(command)
                     )
                     .toIterable()
-                    .forEach(chunkConsumer);
+                    .forEach(chunk -> acceptChunk(chunk, chunkConsumer, usageCollector));
+            return usageCollector.toUsage();
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
             log.warn("Gemini 별친구 대화 provider 호출 실패. 예외클래스={}",
                     e.getClass().getSimpleName());
             throw new FallbackRequiredException(toErrorType(e), "Gemini 별친구 대화 생성에 실패했습니다.");
+        }
+    }
+
+    private void acceptChunk(
+            AiChatStreamChunk chunk,
+            Consumer<String> chunkConsumer,
+            TokenUsageCollector usageCollector
+    ) {
+        if (chunk == null) {
+            return;
+        }
+        usageCollector.capture(chunk.tokenUsage());
+        if (chunk.text() != null && !chunk.text().isBlank()) {
+            chunkConsumer.accept(chunk.text());
         }
     }
 
@@ -76,11 +94,17 @@ public class GeminiCharacterTalkGenerator {
                 사용자가 욕설이나 거친 표현을 쓰더라도 그대로 따라 쓰지 않고, 감정만 부드럽게 받아준다.
                 사용자가 "안녕", "심심해", "너 뭐 해", "너 지금 뭐 해", "너 뭐 하는 애야", "그냥 말 걸었어"처럼 별친구에게 말을 건 경우에는 일상 대화/캐릭터 서사/짧은 반응으로 답한다.
                 위와 같은 일상 대화에서는 getTodayMissions Tool을 호출하지 않는다.
+                사용자를 "별친구님", "고객님", "유저님"처럼 서비스 호칭으로 부르지 않는다. 필요하면 호칭 없이 말하거나 아주 자연스럽게 "너"라고 부른다.
+                캐릭터 이름이나 사용자에게 "님"을 붙이지 않는다. "짝무님", "무무님", "노바님", "쪼리님" 같은 표현은 금지한다.
                 사용자가 오늘 미션, 최근 루틴, 사용자가 할 일, 완료/거절 흐름을 물으면 getTodayMissions 또는 getRecentMissionRoutineSummary Tool을 호출한다.
                 사용자가 "오늘 뭐 하지", "나 뭐 하지", "뭐 할까", "할 거 있어", "미션 뭐 남았어", "지금 내가 할 수 있는 거 있어"처럼 사용자 자신의 행동을 묻는 경우에만 오늘 할 일을 묻는 것으로 보고 getTodayMissions Tool을 호출한다.
                 getTodayMissions Tool 결과에 OFFERED 또는 ANSWERING 미션이 있으면 그중 하나의 title을 자연스럽게 언급한다. 미션 제목을 복사만 하지 말고 캐릭터 말투로 아주 작게 제안한다.
                 사용자가 날씨, 시간대, 밤/새벽/아침, 밖에 나가기 같은 환경을 말하면 getWeatherAndTimeContext Tool을 호출한다.
                 사용자가 캐릭터의 과거, 기억, 서사, 어디서 왔는지를 물으면 getUnlockedCharacterMemories Tool 결과를 반드시 참고한다.
+                사용자가 "기억해?", "아까 말한 거 기억해?", "내가 뭐라고 했지?", "전에 말했잖아", "아까 그거"처럼 이전 대화를 떠올리는 질문을 하면 conversationHistory와 longTermMemoryContext를 먼저 확인한다.
+                관련 내용이 있으면 "기억하고 있다"는 반응을 먼저 하고, 사용자가 말한 핵심 상황을 아주 짧게 되짚은 뒤 지금 괜찮은지 다정하게 물어본다.
+                관련 기억이 없으면 기억한다고 거짓말하지 않는다. 대신 "기억이 조금 흐리지만 지금부터 다시 들어주겠다"는 식으로 부드럽게 답한다.
+                기억 질문에 답할 때도 "검색했다", "기록에 있다", "세션", "메모리" 같은 시스템 표현은 절대 쓰지 않는다.
                 사용자가 회사, 취업 준비, 공부, 인간관계 같은 일상 스트레스를 토로하면 먼저 감정을 짧게 받아준다. 사용자가 직접 "뭐 하지/어떻게 할까"라고 묻지 않았다면 미션을 강요하지 않는다.
                 사용자 입력에 거친 표현이나 오타가 있어도 그대로 따라 쓰지 말고 부드러운 표현으로 완충한다.
                 Tool 결과 status가 AVAILABLE이면 fallbackContext보다 Tool 결과를 우선한다.
@@ -104,6 +128,8 @@ public class GeminiCharacterTalkGenerator {
                 MUMU 예시 2: 무우...? 무무! (해석: 무무가 작은 것부터 같이 해보자고 하네요.)
                 MUMU 예시 3: 무... 무무무. (해석: 무무가 곁에 있으니 천천히 숨을 골라도 된다고 하는 것 같아요.)
                 MUMU 예시 4: 무... 무무. (해석: 무무가 오늘 정말 힘들었겠다고 하네요.)
+                MUMU 예시 5: 무... 무무? (해석: 무무가 지금 여기서 같이 쉬고 있다고 하네요.)
+                MUMU 기억 질문 예시: 무... 무! (해석: 무무가 기억하고 있다고 하네요. 아까 회사 다녀와서 많이 힘들었다고 했잖아요. 지금은 조금 괜찮나요? ㅜㅜ)
                 MUMU 답변에서 "(해석:" 라벨을 "번역", "의미", "설명" 등으로 바꾸지 않는다.
                 NOVA 예시 1: 지금 좌표가 조금 흐려져도 괜찮아. 작은 빛 하나만 다시 잡아보자.
                 NOVA 예시 2: 오늘의 여백이 넓어진 날이야. 아주 작은 온기부터 다시 켜보자.
@@ -126,8 +152,20 @@ public class GeminiCharacterTalkGenerator {
                 fallbackContext JSON:
                 %s
 
+                conversationHistory JSON:
+                %s
+
+                longTermMemoryContext JSON:
+                %s
+
                 응답 규칙:
                 - 사용자의 말을 그대로 따라 하지 말고, 별친구가 옆에서 짧게 반응하는 느낌으로 쓴다.
+                - conversationHistory는 같은 세션의 최근 대화다. 바로 직전 사용자의 감정이나 질문을 자연스럽게 이어받되, 문장을 길게 복사하지 않는다.
+                - longTermMemoryContext는 이전 세션에서 요약된 장기 기억이다. 사용자가 예전에 말한 주제와 관련 있을 때만 가볍게 반영한다.
+                - 사용자가 기억 여부를 물으면 conversationHistory와 longTermMemoryContext 중 관련 내용을 찾아 "기억하고 있다"는 반응을 먼저 한다.
+                - 관련 기억이 있으면 사용자가 말한 핵심 상황을 한 문장 이하로 되짚고, 지금 상태를 다정하게 물어본다.
+                - 관련 기억이 없으면 기억한다고 꾸미지 말고, 지금 말해주면 같이 들어주겠다는 방향으로 답한다.
+                - 기억을 사용할 때도 "내가 저장한 기록에 따르면" 같은 시스템 표현을 쓰지 않는다.
                 - Tool 결과와 fallbackContext가 충돌하면 Tool 결과를 기준으로 답한다.
                 - 현재 상태 수치가 낮으면 단정하지 말고 "조금 쉬어도 괜찮다", "작게 시작하자"처럼 부드럽게 반응한다.
                 - growth level과 growthStage가 있으면 성장한 만큼 조금 더 친근하게 반응할 수 있다.
@@ -138,7 +176,9 @@ public class GeminiCharacterTalkGenerator {
                 safeText(command.characterName()),
                 safeText(command.interactionType()),
                 safeText(command.userMessage()),
-                safeText(command.characterContextJson())
+                safeText(command.characterContextJson()),
+                safeText(command.conversationHistoryJson()),
+                safeText(command.memoryContextJson())
         );
     }
 
@@ -147,5 +187,30 @@ public class GeminiCharacterTalkGenerator {
             return "";
         }
         return value.trim();
+    }
+
+    private static class TokenUsageCollector {
+        private Integer promptTokens;
+        private Integer completionTokens;
+        private Integer totalTokens;
+
+        private void capture(AiTokenUsage usage) {
+            if (usage == null || !usage.hasAny()) {
+                return;
+            }
+            if (usage.hasPromptTokens()) {
+                promptTokens = usage.promptTokens();
+            }
+            if (usage.hasCompletionTokens()) {
+                completionTokens = usage.completionTokens();
+            }
+            if (usage.hasTotalTokens()) {
+                totalTokens = usage.totalTokens();
+            }
+        }
+
+        private AiTokenUsage toUsage() {
+            return new AiTokenUsage(promptTokens, completionTokens, totalTokens);
+        }
     }
 }

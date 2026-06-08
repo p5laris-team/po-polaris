@@ -42,6 +42,10 @@ class GeminiCharacterTalkGeneratorTest {
         assertSame(toolObject, chatClient.tools[0]);
         assertTrue(chatClient.systemPrompt.contains("getCharacterStatus Tool과 getUnlockedCharacterMemories Tool을 먼저 호출"));
         assertTrue(chatClient.userPrompt.contains("fallbackContext JSON"));
+        assertTrue(chatClient.userPrompt.contains("conversationHistory JSON"));
+        assertTrue(chatClient.userPrompt.contains("longTermMemoryContext JSON"));
+        assertTrue(chatClient.systemPrompt.contains("기억하고 있다"));
+        assertTrue(chatClient.systemPrompt.contains("기억한다고 거짓말하지 않는다"));
     }
 
     private CharacterTalkGenerationCommand command() {
