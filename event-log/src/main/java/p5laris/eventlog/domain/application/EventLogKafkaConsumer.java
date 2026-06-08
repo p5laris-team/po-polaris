@@ -65,11 +65,32 @@ public class EventLogKafkaConsumer {
             Object rawMetadata = rawEvent.get("metadata");
             String propertiesJson = rawMetadata != null ? objectMapper.writeValueAsString(rawMetadata) : null;
             
-            // 3. 발생 시각(occurredAt) 파싱 처리
-            String occurredAtStr = (String) rawEvent.get("occurredAt");
-            LocalDateTime occurredAt = occurredAtStr != null 
-                    ? OffsetDateTime.parse(occurredAtStr).toLocalDateTime() 
-                    : LocalDateTime.now();
+            // 3. 발생 시각(occurredAt) 파싱 처리 (Double, String, List 등 다중 직렬화 포맷 방어)
+            Object occurredAtObj = rawEvent.get("occurredAt");
+            LocalDateTime occurredAt = LocalDateTime.now();
+            if (occurredAtObj != null) {
+                if (occurredAtObj instanceof String) {
+                    occurredAt = OffsetDateTime.parse((String) occurredAtObj).toLocalDateTime();
+                } else if (occurredAtObj instanceof Number) {
+                    double timestampSeconds = ((Number) occurredAtObj).doubleValue();
+                    occurredAt = LocalDateTime.ofInstant(
+                            java.time.Instant.ofEpochMilli((long) (timestampSeconds * 1000)),
+                            java.time.ZoneId.systemDefault()
+                    );
+                } else if (occurredAtObj instanceof java.util.List) {
+                    java.util.List<?> list = (java.util.List<?>) occurredAtObj;
+                    if (list.size() >= 6) {
+                        int year = ((Number) list.get(0)).intValue();
+                        int month = ((Number) list.get(1)).intValue();
+                        int day = ((Number) list.get(2)).intValue();
+                        int hour = ((Number) list.get(3)).intValue();
+                        int minute = ((Number) list.get(4)).intValue();
+                        int second = ((Number) list.get(5)).intValue();
+                        int nano = list.size() > 6 ? ((Number) list.get(6)).intValue() : 0;
+                        occurredAt = LocalDateTime.of(year, month, day, hour, minute, second, nano);
+                    }
+                }
+            }
 
             // 4. 서비스 레이어 호출을 위한 EventLogRequest DTO 빌드
             // idempotencyKey를 UUID 포맷의 eventId로 전환

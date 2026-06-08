@@ -126,7 +126,7 @@ export default function () {
     } else {
         const createCharPayload = JSON.stringify({
             characterTypeId: 1, // 기본 캐릭터 타입 1
-            name: `Friend_${user.user_id}`
+            name: `U_${user.user_id}`
         });
         const createCharRes = http.post(`${gatewayUrl}/api/character/v1/characters`, createCharPayload, { headers: authHeaders });
         const isCharCreated = check(createCharRes, {
