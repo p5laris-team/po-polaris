@@ -15,8 +15,8 @@ import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
 import p5laris.mission.domain.infrastructure.config.MissionRewardOutboxProperties;
-import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
@@ -39,7 +39,7 @@ public class MissionRewardDispatcher {
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final UserMissionRepository userMissionRepository;
     private final WalletRewardClient walletRewardClient;
-    private final NotificationPushClient notificationPushClient;
+    private final MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
     private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
@@ -219,7 +219,7 @@ public class MissionRewardDispatcher {
 
     private void notifyRewardRecovered(RewardDispatchCommand command) {
         try {
-            notificationPushClient.sendMissionRewardRecoveredNotification(
+            missionNotificationKafkaPublisher.sendMissionRewardRecoveredNotification(
                     command.userId(),
                     command.missionId(),
                     command.rewardStarPiece()
