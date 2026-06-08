@@ -7,7 +7,7 @@
  * 3. 획득한 토큰과 가상 데이터셋 값을 기반으로 온보딩, 캐릭터 생성, AI 대화(장애주입 포함), 미션, 공유, 아이템 구매 연타 시나리오를 구동합니다.
  * 
  * [실행 방식]
- * - $ docker-compose -f docker-compose-simulation.yml run --rm k6
+ * - $ docker-compose -f docker-compose-kafka.yml run --rm k6
  */
 
 import http from 'k6/http';
@@ -41,14 +41,15 @@ const aiLogs = new SharedArray('ai_logs', function () {
 });
 
 // 2. 부하 시나리오 구성 (VU Ramping 설정)
+// 로컬 환경의 자원 고갈 및 커넥션 타임아웃을 예방하기 위해 최대 동시 사용자를 10명으로 조율하고, 점진적으로 ramping 합니다.
 export const options = {
     scenarios: {
         polaris_stress_test: {
             executor: 'ramping-vus',
             startVUs: 0,
             stages: [
-                { duration: '15s', target: 20 }, // 15초 동안 20명으로 증가
-                { duration: '30s', target: 20 }, // 30초 동안 20명 유지
+                { duration: '15s', target: 5 },  // 15초 동안 5명으로 서서히 증가
+                { duration: '30s', target: 10 }, // 30초 동안 10명 유지 (로컬 안정적인 부하선)
                 { duration: '10s', target: 0 },  // 10초 동안 서서히 기동 중지
             ],
         },
@@ -70,8 +71,8 @@ export default function () {
     const shareEvent = shareEvents[index % shareEvents.length];
     const aiLog = aiLogs[index % aiLogs.length];
 
-    // Docker Compose 환경에서는 'gateway:8080'으로 다이렉트 호출
-    const gatewayUrl = __ENV.GATEWAY_URL || 'http://gateway:8080';
+    // 로컬 실행 시 기본값은 localhost:8080, Docker Compose 실행 시 주입된 환경변수 적용
+    const gatewayUrl = __ENV.GATEWAY_URL || 'http://localhost:8080';
 
     // --- 시나리오 A: [가입/인증 우회] 테스트 토큰 발급 API 호출 ---
     const tokenRes = http.get(`${gatewayUrl}/api/auth/v1/test/token?userId=${user.user_id}`);
@@ -92,6 +93,9 @@ export default function () {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
     };
+    
+    // 백엔드 연결 부하를 분산하기 위해 각 연쇄 요청 사이에 적절한 Think Time(sleep) 도입
+    sleep(0.5);
 
     // --- 시나리오 B: 온보딩 설정 저장 (Save Profile) ---
     // 실제 API: PUT /api/onboarding/v1/profiles/me
@@ -110,6 +114,8 @@ export default function () {
     check(onboardRes, {
         '2. 온보딩 프로필 저장 성공': (r) => r.status === 200
     });
+    
+    sleep(0.5);
 
     // --- 시나리오 C: 캐릭터 조회 및 생성 ---
     let characterId = null;
@@ -131,6 +137,8 @@ export default function () {
         }
     }
 
+    sleep(0.5);
+
     if (characterId) {
         // --- 시나리오 D: AI 대화 SSE 스트리밍 (Gemini Mock 연동) ---
         // 실제 API: POST /api/character/v1/characters/{characterId}/talk/stream
@@ -149,6 +157,8 @@ export default function () {
         check(talkRes, {
             '4. AI 대화 스트리밍 응답 완료': (r) => r.status === 200 || r.status === 504 // timeout chaos 주입 시 504 허용
         });
+
+        sleep(0.5);
 
         // --- 시나리오 E: 미션 플로우 (조회 -> 생성 -> 세션 -> 완료) ---
         let currentMissionId = null;
@@ -171,6 +181,8 @@ export default function () {
             }
         }
 
+        sleep(0.5);
+
         // 3) 미션 완료 처리 (세션 시작 및 답변 제출)
         if (currentMissionId) {
             // 완료 세션 시작
@@ -188,6 +200,8 @@ export default function () {
             }
         }
 
+        sleep(0.5);
+
         // --- 시나리오 F: 공유 카드 생성 및 보상 수령 (Saga 멱등성 검증) ---
         // 1) 공유 카드 생성
         const shareCardPayload = JSON.stringify({
@@ -200,6 +214,8 @@ export default function () {
         if (shareCardRes.status === 200 && shareCardRes.json().data) {
             const shareCardId = shareCardRes.json().data.shareCardId;
             
+            sleep(0.2); // 동시성 연타 직전 아주 짧은 대기
+
             // 2) 공유 보상 신청 연타 (멱등키 검증을 위해 동일 멱등키로 0.01초 간격 2번 요청)
             const shareIdempotencyKey = `SHARE_REWARD:${user.user_id}:${shareEvent.share_date || '2026-05-10'}`;
             const shareEventPayload = JSON.stringify({
@@ -217,9 +233,13 @@ export default function () {
         }
     }
 
+    sleep(0.5);
+
     // --- 시나리오 G: 상점 조회 및 아이템 중복 구매 연타 (Saga 멱등성 검증) ---
     // 1) 상점 아이템 목록 조회
     http.get(`${gatewayUrl}/api/item/v1/items`, { headers: authHeaders });
+
+    sleep(0.2); // 연타 직전 짧은 대기
 
     // 2) 아이템 구매 중복 요청 (동일 멱등키로 연타)
     const purchaseIdempotencyKey = `ITEM_PURCHASE:${user.user_id}:${transaction.idempotency_key || '1002'}`;
