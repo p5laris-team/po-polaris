@@ -11,7 +11,7 @@
  *   $ npm install express
  * 
  * [실행 방법]
- * - $ node ai-mock-server.js
+ * - $ node simulation/ai-mock-server.js
  */
 
 const express = require('express');
@@ -20,9 +20,14 @@ const app = express();
 // JSON 형태의 요청 바디를 파싱하기 위한 미들웨어 설정
 app.use(express.json());
 
+// 전역 장애 상태를 저장하는 변수 (null: 정상, 'timeout', 'bad_request', 'broken_json')
 let globalChaosType = null;
 
-// 장애(Chaos) 상태 주입 엔드포인트 추가
+/**
+ * [장애 주입 API - POST]
+ * - 호출 예시: POST http://localhost:8085/chaos/inject (Body: { "type": "timeout" })
+ * - type 종류: timeout, bad_request, broken_json, none
+ */
 app.post('/chaos/inject', (req, res) => {
     const type = req.query.type || req.body.type;
     if (['timeout', 'bad_request', 'broken_json', 'none'].includes(type)) {
@@ -33,7 +38,11 @@ app.post('/chaos/inject', (req, res) => {
     return res.status(400).json({ status: 'ERROR', message: "invalid chaos type. Use: timeout, bad_request, broken_json, none" });
 });
 
-// GET 방식으로도 편리하게 제어 가능하도록 지원
+/**
+ * [장애 주입 API - GET]
+ * - 호출 예시: GET http://localhost:8085/chaos/inject?type=timeout
+ * - 브라우저나 PowerShell 등에서 편리하게 테스트 및 수동 주입을 위해 GET 방식도 지원합니다.
+ */
 app.get('/chaos/inject', (req, res) => {
     const type = req.query.type;
     if (['timeout', 'bad_request', 'broken_json', 'none'].includes(type)) {
@@ -45,11 +54,12 @@ app.get('/chaos/inject', (req, res) => {
 });
 
 /**
- * Gemini 2.5-flash 모델의 콘텐츠 생성 API 요청을 대리하여 모킹(Mocking) 처리합니다.
- * 백엔드 ai 모듈의 엔드포인트를 이 API 주소로 변경하여 테스트합니다.
+ * [Gemini 2.5-flash generateContent 모킹 API]
+ * - 백엔드 AI 모듈이 호출하는 외부 구글 AI API의 주소를 흉내 냅니다.
+ * - 경로: POST /v1beta/models/gemini-2.5-flash:generateContent
  */
 app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
-    // 1. 들어온 요청 프롬프트 데이터 간단 로깅 (모니터링용)
+    // 1. 들어온 요청 프롬프트 데이터 간단 로깅 (테스트 중 동작 추적용)
     try {
         const contents = req.body.contents;
         if (contents && contents[0] && contents[0].parts && contents[0].parts[0]) {
@@ -59,7 +69,7 @@ app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
         console.log('[Gemini Request] 바디 구조가 규격과 다름:', req.body);
     }
 
-    // 2. 장애(Chaos) 주입 검증: 전역 설정 또는 요청 헤더
+    // 2. 장애(Chaos) 주입 우선순위 결정: 전역 설정(globalChaosType) 혹은 개별 요청 헤더('x-chaos-trigger')
     const chaosTrigger = globalChaosType || req.headers['x-chaos-trigger'];
 
     if (chaosTrigger) {
@@ -67,14 +77,14 @@ app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
         
         switch (chaosTrigger) {
             case 'timeout':
-                // 시나리오 A: 5초 이상 응답을 인위적으로 지연시킨 후 504 Gateway Timeout 반환 (타임아웃 / Fallback 테스트)
+                // [장애 A] 5초 이상 응답을 강제 지연시킨 후 504 Gateway Timeout 반환하여 백엔드 타임아웃/서킷 브레이커 테스트 유발
                 console.log('  -> [장애 주입] 5초 응답 지연 발생...');
                 return setTimeout(() => {
                     res.status(504).send('Gateway Timeout - Fake Server Delayed Response');
                 }, 5000);
 
             case 'bad_request':
-                // 시나리오 B: Google API 공식 에러 형태의 400 Bad Request 반환 (AI Provider 실패 테스트)
+                // [장애 B] 실제 Google API 공식 에러 형태의 400 Bad Request 객체를 반환하여 AI 연동 실패 시의 에러 핸들링 테스트
                 console.log('  -> [장애 주입] 400 Bad Request 강제 응답...');
                 return res.status(400).json({
                     error: {
@@ -85,7 +95,7 @@ app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
                 });
 
             case 'broken_json':
-                // 시나리오 C: 파싱 불가능한 망가진 JSON 형태의 원시 텍스트 반환 (Invalid Output 파싱 에러 테스트)
+                // [장애 C] 닫히지 않은 깨진 JSON 문자열을 전송하여, 백엔드 LLM Parser의 JSON 파싱 실패 및 예외 처리를 테스트
                 console.log('  -> [장애 주입] 깨진 JSON 결과물 반환...');
                 res.setHeader('Content-Type', 'application/json');
                 return res.status(200).send('{ "status": "SUCCESS", "message": "JSON이 닫히지 않았음... ');
@@ -95,8 +105,8 @@ app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
         }
     }
 
-    // 3. 정상 응답 시나리오 (프로젝트 AI 응답 포맷인 JSON 형태의 String을 후보 콘텐츠로 실어 보냄)
-    // 아래 텍스트는 실제 Polaris AI 미션 피드백/가이드가 JSON 형식으로 에스케이프되어 적재되는 것을 묘사한 것입니다.
+    // 3. 정상 응답 시나리오 (실제 구글 Gemini API 응답 스키마와 동일하게 반환)
+    // - candidates.content.parts[0].text에 JSON 포맷의 미션 피드백 결과 문자열을 바인딩합니다.
     const mockAiResponse = {
         candidates: [{
             content: {
@@ -118,7 +128,7 @@ app.post('/v1beta/models/gemini-2.5-flash:generateContent', (req, res) => {
         }
     };
 
-    // 지연 없는 정상 즉각 응답
+    // 지연 없이 정상적으로 즉각적인 200 OK 응답 반환
     res.json(mockAiResponse);
 });
 

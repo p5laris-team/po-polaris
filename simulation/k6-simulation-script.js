@@ -15,7 +15,9 @@ import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
 import papaparse from 'https://jslib.k6.io/papaparse/5.1.1/index.js';
 
-// 1. 6대 가상 데이터셋 CSV 로드 및 파싱
+// =========================================================================
+// 1. 6대 가상 데이터셋 CSV 로드 및 파싱 (SharedArray를 사용해 메모리 절약)
+// =========================================================================
 const users = new SharedArray('users', function () {
     return papaparse.parse(open('./test-datasets/users.csv'), { header: true }).data;
 });
@@ -40,29 +42,34 @@ const aiLogs = new SharedArray('ai_logs', function () {
     return papaparse.parse(open('./test-datasets/ai_usage_logs.csv'), { header: true }).data;
 });
 
+// =========================================================================
 // 2. 부하 시나리오 구성 (VU Ramping 설정)
-// 로컬 환경의 자원 고갈 및 커넥션 타임아웃을 예방하기 위해 최대 동시 사용자를 10명으로 조율하고, 점진적으로 ramping 합니다.
+// =========================================================================
+// - 로컬 환경의 자원 고갈 및 커넥션 타임아웃을 예방하기 위해 최대 동시 사용자를 10명으로 조율하고, 점진적으로 ramping 합니다.
 export const options = {
     scenarios: {
         polaris_stress_test: {
             executor: 'ramping-vus',
             startVUs: 0,
             stages: [
-                { duration: '15s', target: 5 },  // 15초 동안 5명으로 서서히 증가
-                { duration: '30s', target: 10 }, // 30초 동안 10명 유지 (로컬 안정적인 부하선)
-                { duration: '10s', target: 0 },  // 10초 동안 서서히 기동 중지
+                { duration: '15s', target: 5 },  // 15초 동안 5명으로 서서히 증가 (Warm-up)
+                { duration: '30s', target: 10 }, // 30초 동안 10명 유지 (로컬 안정적인 최대 부하 유지선)
+                { duration: '10s', target: 0 },  // 10초 동안 서서히 기동 중지 (Graceful shutdown)
             ],
         },
     },
     thresholds: {
+        // AI 장애 주입이나 멱등성 409 차단 코드로 인해 실패율이 잡힐 수 있으므로, 에러율 한계치를 5%가 아닌 넉넉하게 세팅하는 편이 권장됩니다.
         http_req_failed: ['rate<0.05'], 
-        http_req_duration: ['p(95)<500'], 
+        http_req_duration: ['p(95)<500'], // 95% 요청은 500ms 이하여야 함 (단, AI SSE 스트림은 더 오래 걸릴 수 있음)
     },
 };
 
-// 3. 부하 테스트 실행 (가상 유저별 루프)
+// =========================================================================
+// 3. 부하 테스트 실행 (가상 유저 루프)
+// =========================================================================
 export default function () {
-    // 가상 유저(VU) 번호에 따라 순차적으로 가상 사용자 데이터 할당
+    // 가상 유저(VU) 인덱스에 따라 각 유저별 고유 시뮬레이션 데이터를 분배 및 바인딩
     const index = (__VU - 1) % users.length;
     const user = users[index];
     const profile = profiles[index];
@@ -71,10 +78,10 @@ export default function () {
     const shareEvent = shareEvents[index % shareEvents.length];
     const aiLog = aiLogs[index % aiLogs.length];
 
-    // 로컬 실행 시 기본값은 localhost:8080, Docker Compose 실행 시 주입된 환경변수 적용
+    // 로컬 실행 시 기본값은 localhost:8080, Docker Compose 실행 시 주입된 환경변수(host.docker.internal:8080) 적용
     const gatewayUrl = __ENV.GATEWAY_URL || 'http://localhost:8080';
 
-    // --- 시나리오 A: [가입/인증 우회] 테스트 토큰 발급 API 호출 ---
+    // ── 시나리오 A: [가입/인증 우회] 테스트 토큰 발급 API 호출 ──
     const tokenRes = http.get(`${gatewayUrl}/api/auth/v1/test/token?userId=${user.user_id}`);
     
     const isTokenOk = check(tokenRes, {
@@ -85,7 +92,7 @@ export default function () {
     if (!isTokenOk) {
         console.error(`[에러] 토큰 발급 실패 - 유저 ID: ${user.user_id}, 응답코드: ${tokenRes.status}`);
         sleep(1);
-        return;
+        return; // 토큰이 없으면 후속 절차를 밟지 않고 탈출
     }
 
     const token = tokenRes.json().data.accessToken;
@@ -94,11 +101,10 @@ export default function () {
         'Content-Type': 'application/json'
     };
     
-    // 백엔드 연결 부하를 분산하기 위해 각 연쇄 요청 사이에 적절한 Think Time(sleep) 도입
+    // 백엔드 커넥션 풀 누수를 방지하고 실사용자 패턴을 모사하기 위해 Think Time(0.5초 대기)을 요청 사이에 지속 주입
     sleep(0.5);
 
-    // --- 시나리오 B: 온보딩 설정 저장 (Save Profile) ---
-    // 실제 API: PUT /api/onboarding/v1/profiles/me
+    // ── 시나리오 B: 온보딩 설정 저장 (Save Profile) ──
     const onboardingPayload = JSON.stringify({
         livingType: profile.living_type,
         wakeUpTime: profile.wake_up_time,
@@ -117,7 +123,8 @@ export default function () {
     
     sleep(0.5);
 
-    // --- 시나리오 C: 캐릭터 조회 및 생성 ---
+    // ── 시나리오 C: 캐릭터 조회 및 생성 ──
+    // - 캐릭터 이름 글자수 제약조건(10자 이하)을 준수하기 위해 'U_유저ID' (8글자) 포맷으로 생성 요청을 넣습니다.
     let characterId = null;
     const getCharRes = http.get(`${gatewayUrl}/api/character/v1/characters/me`, { headers: authHeaders });
     
@@ -140,36 +147,36 @@ export default function () {
     sleep(0.5);
 
     if (characterId) {
-        // --- 시나리오 D: AI 대화 SSE 스트리밍 (Gemini Mock 연동) ---
-        // 실제 API: POST /api/character/v1/characters/{characterId}/talk/stream
+        // ── 시나리오 D: AI 대화 SSE 스트리밍 (Gemini Mock 연동 및 장애 주입) ──
         const talkPayload = JSON.stringify({
             message: `오늘 ${missionEvent.category} 미션을 어떻게 깨는 게 좋을까? 추천해줘!`,
             interactionType: "TALK"
         });
         
-        // 부하 도중 일부 요청에 인위적 Chaos 헤더 주입하여 Fallback 성능 검사 (10% 확률)
+        // 10%의 임의의 확률로 요청 헤더에 x-chaos-trigger를 실어 타임아웃 예외 대응 회복력(Circuit Breaker) 테스트
         const chatHeaders = Object.assign({}, authHeaders);
         if (Math.random() < 0.10) {
-            chatHeaders['x-chaos-trigger'] = 'timeout'; // 타임아웃 유발
+            chatHeaders['x-chaos-trigger'] = 'timeout'; 
         }
 
         const talkRes = http.post(`${gatewayUrl}/api/character/v1/characters/${characterId}/talk/stream`, talkPayload, { headers: chatHeaders });
         check(talkRes, {
-            '4. AI 대화 스트리밍 응답 완료': (r) => r.status === 200 || r.status === 504 // timeout chaos 주입 시 504 허용
+            // 타임아웃 장애 주입 시 504 응답도 서킷 브레이커 작동에 따른 정상 동작으로 검증 처리
+            '4. AI 대화 스트리밍 응답 완료': (r) => r.status === 200 || r.status === 504 
         });
 
         sleep(0.5);
 
-        // --- 시나리오 E: 미션 플로우 (조회 -> 생성 -> 세션 -> 완료) ---
+        // ── 시나리오 E: 미션 플로우 (조회 -> 생성 -> 세션 시작 -> 완료) ──
         let currentMissionId = null;
         
-        // 1) 현재 미션 조회
+        // 1) 현재 진행 중인 루틴 미션 조회
         const currMissionRes = http.get(`${gatewayUrl}/api/mission/v1/missions/current`, { headers: authHeaders });
         if (currMissionRes.status === 200 && currMissionRes.json().data) {
             currentMissionId = currMissionRes.json().data.id;
         }
 
-        // 2) 현재 미션이 없다면 다음 미션 제안받기
+        // 2) 현재 미션이 없다면 다음 일일 루틴 미션 제안받기
         if (!currentMissionId) {
             const nextMissionPayload = JSON.stringify({
                 characterId: characterId,
@@ -183,13 +190,11 @@ export default function () {
 
         sleep(0.5);
 
-        // 3) 미션 완료 처리 (세션 시작 및 답변 제출)
+        // 3) 미션 완료 세션 구동 및 답변 제출
         if (currentMissionId) {
-            // 완료 세션 시작
             const sessionRes = http.post(`${gatewayUrl}/api/mission/v1/missions/${currentMissionId}/completion-sessions`, {}, { headers: authHeaders });
             
             if (sessionRes.status === 200) {
-                // 답변 제출
                 const answerPayload = JSON.stringify({
                     answer: `오늘 ${missionEvent.category || 'HEALTH'} 관련 루틴 미션을 무사히 수행하여 성공적으로 마쳤습니다!`
                 });
@@ -202,8 +207,8 @@ export default function () {
 
         sleep(0.5);
 
-        // --- 시나리오 F: 공유 카드 생성 및 보상 수령 (Saga 멱등성 검증) ---
-        // 1) 공유 카드 생성
+        // ── 시나리오 F: 공유 카드 생성 및 보상 수령 (Saga 분산 트랜잭션 멱등성 연타 검증) ──
+        // 1) 공유용 카드 생성
         const shareCardPayload = JSON.stringify({
             characterId: characterId,
             headline: `오늘도 별친구와 함께 ${missionEvent.category || 'BASIC'} 루틴 완료!`,
@@ -214,9 +219,9 @@ export default function () {
         if (shareCardRes.status === 200 && shareCardRes.json().data) {
             const shareCardId = shareCardRes.json().data.shareCardId;
             
-            sleep(0.2); // 동시성 연타 직전 아주 짧은 대기
+            sleep(0.2); // 연타 직전 네트워크 짧은 휴식
 
-            // 2) 공유 보상 신청 연타 (멱등키 검증을 위해 동일 멱등키로 0.01초 간격 2번 요청)
+            // 2) 동일한 멱등키를 사용하여 0.01초 간격으로 보상 청구를 2회 전송하여 중복 수령 방어 테스트
             const shareIdempotencyKey = `SHARE_REWARD:${user.user_id}:${shareEvent.share_date || '2026-05-10'}`;
             const shareEventPayload = JSON.stringify({
                 shareCardId: shareCardId,
@@ -235,16 +240,17 @@ export default function () {
 
     sleep(0.5);
 
-    // --- 시나리오 G: 상점 조회 및 아이템 중복 구매 연타 (Saga 멱등성 검증) ---
-    // 1) 상점 아이템 목록 조회
+    // ── 시나리오 G: 상점 조회 및 아이템 중복 구매 연타 (Saga 멱등성 검증) ──
+    // 1) 상점 내 판매 아이템 목록 조회
     http.get(`${gatewayUrl}/api/item/v1/items`, { headers: authHeaders });
 
-    sleep(0.2); // 연타 직전 짧은 대기
+    sleep(0.2); // 연타 직전 네트워크 짧은 휴식
 
-    // 2) 아이템 구매 중복 요청 (동일 멱등키로 연타)
+    // 2) 동일 멱등키를 사용해 아이템 구매 API를 연속 2회 전송하여 1회만 차감되는지 체크
+    // - 백엔드에서 멱등 조회 시 LazyInitializationException이 발생하지 않도록 Fetch Join 쿼리가 조치되었습니다.
     const purchaseIdempotencyKey = `ITEM_PURCHASE:${user.user_id}:${transaction.idempotency_key || '1002'}`;
     const purchasePayload = JSON.stringify({
-        itemId: 1, // 상점 기본 아이템 ID 1 가정
+        itemId: 1, // 상점 기본 아이템 ID 1
         quantity: 1,
         idempotencyKey: purchaseIdempotencyKey
     });
