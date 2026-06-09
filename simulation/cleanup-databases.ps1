@@ -82,23 +82,23 @@ Execute-Docker-Query $DB_LOG_SERVICE $logSql
 
 # 3-3) ITEM 서비스 데이터 삭제
 # - 아이템 사용 이력, 구매 이력을 지운 뒤 보유 아이템 및 아웃박스 이벤트 청소
-$itemSql = "BEGIN; DELETE FROM item_usage_histories WHERE user_id >= 900001; DELETE FROM item_purchase_histories WHERE user_id >= 900001; DELETE FROM user_items WHERE user_id >= 900001; DELETE FROM item_outbox_events WHERE aggregate_id >= 900001; COMMIT;"
+$itemSql = "BEGIN; DELETE FROM item_usage_histories WHERE user_id >= 900001; DELETE FROM item_purchase_histories WHERE user_id >= 900001; DELETE FROM user_items WHERE user_id >= 900001; DELETE FROM item_outbox_events; COMMIT;"
 Execute-Docker-Query $DB_ITEM_SERVICE $itemSql
 
 # 3-4) CHARACTER / SHARE 서비스 데이터 삭제
 # - 캐릭터 육성 로그(Exp, Care), SNS 공유 기록, 공유 카드 및 캐릭터 아웃박스 이벤트 청소
-$charSql = "BEGIN; DELETE FROM share_logs WHERE user_id >= 900001; DELETE FROM share_cards WHERE user_id >= 900001; DELETE FROM character_exp_logs WHERE user_id >= 900001; DELETE FROM character_care_logs WHERE user_id >= 900001; DELETE FROM user_characters WHERE user_id >= 900001; DELETE FROM character_outbox_events WHERE aggregate_id >= 900001; COMMIT;"
+$charSql = "BEGIN; DELETE FROM share_logs WHERE user_id >= 900001; DELETE FROM share_cards WHERE user_id >= 900001; DELETE FROM character_exp_logs WHERE user_id >= 900001; DELETE FROM character_care_logs WHERE user_id >= 900001; DELETE FROM user_characters WHERE user_id >= 900001; DELETE FROM character_outbox_events; COMMIT;"
 Execute-Docker-Query $DB_CHAR_SERVICE $charSql
 
 # 3-5) MISSION 서비스 데이터 삭제
 # - RAG 기억 단편(user_memories), 미션 피드백/답변, 일일 배정 미션(user_missions) 데이터 제거
-$missionSql = "BEGIN; DELETE FROM user_memories WHERE user_id >= 900001; DELETE FROM mission_feedbacks WHERE user_id >= 900001; DELETE FROM mission_completion_answers WHERE user_id >= 900001; DELETE FROM user_missions WHERE user_id >= 900001; DELETE FROM mission_outbox_events WHERE aggregate_id >= 900001; COMMIT;"
+$missionSql = "BEGIN; DELETE FROM user_memories WHERE user_id >= 900001; DELETE FROM mission_feedbacks WHERE user_id >= 900001; DELETE FROM mission_completion_answers WHERE user_id >= 900001; DELETE FROM user_missions WHERE user_id >= 900001; DELETE FROM mission_outbox_events; COMMIT;"
 Execute-Docker-Query $DB_MISSION_SERVICE $missionSql
 
 # 3-6) USER 서비스 데이터 삭제
 # - 외래키 오류 방지를 위해 하위 참조 데이터(star_piece, wallets, onboarding_profiles, attendance, payment_transactions, payment_orders)를 먼저 순차 삭제한 후, 최종적으로 users 테이블에서 시뮬레이션용 유저 데이터를 지웁니다.
 # - 결제(payment_transactions)는 외래키 제약조건에 맞춰 payment_orders를 거쳐 서브쿼리로 참조 삭제하도록 수정 반영되었습니다.
-$userSql = "BEGIN; DELETE FROM star_piece_transactions WHERE user_id >= 900001; DELETE FROM wallets WHERE user_id >= 900001; DELETE FROM onboarding_profiles WHERE user_id >= 900001; DELETE FROM attendance_records WHERE user_id >= 900001; DELETE FROM payment_transactions WHERE payment_order_id IN (SELECT id FROM payment_orders WHERE user_id >= 900001); DELETE FROM payment_orders WHERE user_id >= 900001; DELETE FROM user_outbox_events WHERE aggregate_id >= 900001; DELETE FROM users WHERE id >= 900001 OR email LIKE 'simulation_test_%'; COMMIT;"
+$userSql = "BEGIN; DELETE FROM star_piece_transactions WHERE user_id >= 900001; DELETE FROM wallets WHERE user_id >= 900001; DELETE FROM onboarding_profiles WHERE user_id >= 900001; DELETE FROM attendance_records WHERE user_id >= 900001; DELETE FROM payment_transactions WHERE payment_order_id IN (SELECT id FROM payment_orders WHERE user_id >= 900001); DELETE FROM payment_orders WHERE user_id >= 900001; DELETE FROM user_outbox_events; DELETE FROM users WHERE id >= 900001 OR email LIKE 'simulation_test_%'; COMMIT;"
 Execute-Docker-Query $DB_USER_SERVICE $userSql
 
 # 3-7) AI 서비스 데이터 삭제

@@ -210,7 +210,7 @@ export default function () {
         const shareCardPayload = JSON.stringify({
             characterId: characterId,
             headline: `오늘도 별친구와 함께 ${missionEvent.category || 'BASIC'} 루틴 완료!`,
-            imageUrl: "https://polaris.cdn/shares/card_01.png"
+            imageUrl: `https://cdn.p5laris.life/share-cards/${user.user_id}/card_01.png`
         });
         const shareCardRes = http.post(`${gatewayUrl}/api/share/v1/share-cards`, shareCardPayload, { headers: authHeaders });
         

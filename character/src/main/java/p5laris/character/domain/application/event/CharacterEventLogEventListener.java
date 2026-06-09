@@ -14,13 +14,19 @@ import java.util.UUID;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class CharacterEventLogEventListener {
 
     public static final String AGGREGATE_TYPE_CHARACTER_EVENT_LOG = "CHARACTER_EVENT_LOG";
 
     private final ObjectMapper objectMapper;
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
+    private final ObjectMapper localMapper;
+
+    public CharacterEventLogEventListener(ObjectMapper objectMapper, CharacterOutboxEventRepository characterOutboxEventRepository) {
+        this.objectMapper = objectMapper;
+        this.characterOutboxEventRepository = characterOutboxEventRepository;
+        this.localMapper = objectMapper.copy().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+    }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(CharacterEventLogEvent event) {
@@ -29,7 +35,7 @@ public class CharacterEventLogEventListener {
                     AGGREGATE_TYPE_CHARACTER_EVENT_LOG,
                     event.refId(),
                     event.eventType(),
-                    objectMapper.valueToTree(event),
+                    localMapper.valueToTree(event),
                     UUID.randomUUID().toString(),
                     LocalDateTime.now()
             );
