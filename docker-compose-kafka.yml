@@ -35,13 +35,4 @@ services:
     depends_on:
       - kafka
 
-  k6:
-    image: grafana/k6:latest
-    container_name: k6-simulation
-    volumes:
-      - ./simulation:/io
-    environment:
-      - GATEWAY_URL=http://host.docker.internal:8080
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    entrypoint: ["k6", "run", "/io/k6-simulation-script.js"]
+
