@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.mission.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
@@ -17,8 +19,6 @@ import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
 import p5laris.mission.domain.infrastructure.config.MissionRewardOutboxProperties;
-import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
-import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -26,19 +26,23 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * mission_outbox_events에 쌓인 미션 보상 지급 요청을 실제 wallet 모듈로 발송한다.
+ * mission_outbox_events에 쌓인 미션 보상 지급 요청을 Kafka로 발행한다.
  *
- * 미션 완료 트랜잭션은 outbox 저장까지만 책임지고, 이 클래스가 gRPC 호출과 성공/실패 상태 변경을 담당한다.
- * 성공하면 user_missions.idempotency_key에 같은 멱등키를 기록해 이후 같은 완료 요청이 와도 중복 지급하지 않는다.
+ * 미션 완료 트랜잭션은 outbox 저장까지만 책임진다.
+ * 이 클래스는 wallet 적립 요청을 Kafka로 발행하고, 결과 이벤트가 돌아오면 outbox와 보상 지급 marker를 확정한다.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class MissionRewardDispatcher {
 
+    private static final String STAR_PIECE_EARN_REQUESTED_TOPIC = "star-piece-earn-requested";
+    private static final String MISSION_REWARD_REASON = "MISSION_REWARD";
+    private static final String MISSION_REF_TYPE = "MISSION";
+
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final UserMissionRepository userMissionRepository;
-    private final WalletRewardClient walletRewardClient;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
     private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
@@ -53,11 +57,11 @@ public class MissionRewardDispatcher {
                 repo -> repo.countByStatus(MissionOutboxEventStatus.PENDING));
     }
 
-    public WalletRewardResult dispatchNow(Long outboxId) {
+    public void dispatchNow(Long outboxId) {
         RewardDispatchCommand command = claim(outboxId, true)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
 
-        return dispatchClaimed(command, false);
+        dispatchClaimed(command);
     }
 
     public int dispatchDue(int batchSize) {
@@ -78,10 +82,10 @@ public class MissionRewardDispatcher {
             }
 
             try {
-                dispatchClaimed(command.get(), true);
+                dispatchClaimed(command.get());
                 succeededCount++;
             } catch (MissionException e) {
-                log.warn("미션 보상 outbox 발송 실패. outboxId={}, missionId={}, errorCode={}",
+                log.warn("미션 보상 outbox Kafka 발행 실패. outboxId={}, missionId={}, errorCode={}",
                         command.get().outboxId(), command.get().missionId(), e.getErrorCode().getCode());
             }
         }
@@ -157,28 +161,26 @@ public class MissionRewardDispatcher {
     }
 
     /*
-     * gRPC 호출은 mission DB 트랜잭션 밖에서 수행한다.
-     * wallet 호출 성공/실패 결과만 다시 짧은 트랜잭션으로 반영해 DB lock 보유 시간을 줄인다.
+     * Kafka 발행은 mission DB 트랜잭션 밖에서 수행한다.
+     * wallet 적립 결과가 돌아오면 별도 consumer가 outbox 성공/실패 상태를 확정한다.
      */
-    private WalletRewardResult dispatchClaimed(RewardDispatchCommand command, boolean notifyRewardRecovered) {
+    private void dispatchClaimed(RewardDispatchCommand command) {
         try {
-            WalletRewardResult result = walletRewardClient.earnMissionReward(
-                    command.userId(),
-                    command.missionId(),
-                    command.rewardStarPiece(),
-                    command.idempotencyKey()
-            );
-            markSucceeded(command);
-            if (notifyRewardRecovered) {
-                notifyRewardRecovered(command);
-            }
+            StarPieceEarnRequestedEvent event = StarPieceEarnRequestedEvent.builder()
+                    .outboxId(command.outboxId())
+                    .userId(command.userId())
+                    .amount(command.rewardStarPiece())
+                    .reason(MISSION_REWARD_REASON)
+                    .refType(MISSION_REF_TYPE)
+                    .refId(command.missionId())
+                    .idempotencyKey(command.idempotencyKey())
+                    .build();
+            kafkaTemplate.send(STAR_PIECE_EARN_REQUESTED_TOPIC, command.idempotencyKey(), event);
 
             meterRegistry.counter("outbox.events.processed",
-                    "status", "SUCCESS",
+                    "status", "PUBLISHED",
                     "aggregate_type", "MISSION"
             ).increment();
-
-            return result;
         } catch (MissionException e) {
             markFailed(command, e.getMessage());
 
@@ -200,8 +202,23 @@ public class MissionRewardDispatcher {
         }
     }
 
-    private void markSucceeded(RewardDispatchCommand command) {
-        transactionTemplate.executeWithoutResult(status -> {
+    public void markSucceeded(Long outboxId, String idempotencyKey) {
+        RewardDispatchCommand command = transactionTemplate.execute(status -> {
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(outboxId)
+                    .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+            if (!isMissionRewardEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
+            }
+            return toCommand(outbox);
+        });
+        boolean newlySucceeded = markSucceeded(command);
+        if (newlySucceeded) {
+            notifyRewardRecovered(command);
+        }
+    }
+
+    private boolean markSucceeded(RewardDispatchCommand command) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             UserMission mission = userMissionRepository.findByIdAndUserIdForUpdate(command.missionId(), command.userId())
                     .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
             MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(command.outboxId())
@@ -210,11 +227,15 @@ public class MissionRewardDispatcher {
             if (!mission.isCompleted()) {
                 throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
             }
+            if (mission.isRewardPaid() && outbox.getStatus() == MissionOutboxEventStatus.SUCCEEDED) {
+                return false;
+            }
             if (!mission.isRewardPaid()) {
                 mission.recordRewardPaid(command.idempotencyKey());
             }
             outbox.markSucceeded(LocalDateTime.now(clock));
-        });
+            return true;
+        }));
     }
 
     private void notifyRewardRecovered(RewardDispatchCommand command) {
@@ -234,6 +255,18 @@ public class MissionRewardDispatcher {
      * 실패한 outbox는 attempt_count를 증가시키고 다음 재시도 시각을 backoff 정책으로 미룬다.
      * maxAttempts에 도달하면 FAILED로 남겨 운영자가 원인을 확인할 수 있게 한다.
      */
+    public void markFailed(Long outboxId, String idempotencyKey, String errorMessage) {
+        RewardDispatchCommand command = transactionTemplate.execute(status -> {
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(outboxId)
+                    .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+            if (!isMissionRewardEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
+            }
+            return toCommand(outbox);
+        });
+        markFailed(command, errorMessage);
+    }
+
     private void markFailed(RewardDispatchCommand command, String errorMessage) {
         transactionTemplate.executeWithoutResult(status -> {
             MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(command.outboxId())
