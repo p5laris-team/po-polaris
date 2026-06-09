@@ -54,5 +54,28 @@ public interface CharacterOutboxEventRepository extends JpaRepository<CharacterO
             Pageable pageable
     );
 
+    @Query("""
+            select o.id
+            from CharacterOutboxEvent o
+            where o.aggregateType = :aggregateType
+            and (
+                (
+                    o.status = :pendingStatus
+                    and o.nextAttemptAt <= :now
+                ) or (
+                    o.status = :processingStatus
+                    and o.nextAttemptAt <= :now
+                )
+            )
+            order by o.nextAttemptAt asc, o.id asc
+            """)
+    List<Long> findDispatchableIdsByAggregateType(
+            @Param("aggregateType") String aggregateType,
+            @Param("pendingStatus") CharacterOutboxEventStatus pendingStatus,
+            @Param("processingStatus") CharacterOutboxEventStatus processingStatus,
+            @Param("now") LocalDateTime now,
+            Pageable pageable
+    );
+
     long countByStatus(CharacterOutboxEventStatus status);
 }

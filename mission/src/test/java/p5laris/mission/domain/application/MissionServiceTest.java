@@ -16,8 +16,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import p5laris.mission.domain.application.event.MissionCharacterExpRequestedEvent;
+import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
+import p5laris.mission.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
@@ -42,15 +46,11 @@ import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
-import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
-import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import java.time.Clock;
@@ -64,7 +64,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -76,6 +75,7 @@ import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "grpc.server.port=0",
+        "SERVER_PORT=0",
         "grpc.client.notification.address=static://localhost:9098",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
@@ -171,7 +171,7 @@ class MissionServiceTest {
     private AiTextEmbeddingClient aiTextEmbeddingClient;
 
     @MockitoBean
-    private CharacterExpClient characterExpClient;
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     @MockitoBean
     private CharacterProfileClient characterProfileClient;
@@ -180,7 +180,7 @@ class MissionServiceTest {
     private OnboardingProfileClient onboardingProfileClient;
 
     @MockitoBean
-    private NotificationPushClient notificationPushClient;
+    private MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
 
     @BeforeEach
     void setUp() {
@@ -189,24 +189,9 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterExpClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
-        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenReturn(new WalletRewardResult(110, 9001L));
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, kafkaTemplate, characterProfileClient, onboardingProfileClient, missionNotificationKafkaPublisher);
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenAnswer(invocation -> {
-                    Long characterId = invocation.getArgument(1);
-                    int expAmount = invocation.getArgument(3);
-                    return new CharacterExpGrantResult(
-                            characterId,
-                            expAmount,
-                            characterGrowth(0),
-                            characterGrowth(expAmount),
-                            false,
-                            false
-                    );
-                });
         when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
                 .thenReturn(Optional.of("NOVA"));
         when(onboardingProfileClient.findProfile(anyLong()))
@@ -999,18 +984,16 @@ class MissionServiceTest {
         assertThat(response.getAnswer().getText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(response.getAnswer().getAnsweredAt()).isNotBlank();
         assertThat(response.getReward().getStarPiece()).isEqualTo(10);
-        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
-        assertThat(response.hasWallet()).isTrue();
-        assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING);
+        assertThat(response.hasWallet()).isFalse();
         assertThat(response.hasCharacterExp()).isTrue();
         assertThat(response.getCharacterExp().getExpAmount()).isEqualTo(10);
-        assertThat(response.getCharacterExp().getExpGained()).isEqualTo(10);
-        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED);
-        assertThat(response.getCharacterExp().getAfterGrowth().getExp()).isEqualTo(10);
+        assertThat(response.getCharacterExp().getExpGained()).isZero();
+        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PROCESSING);
         assertThat(response.getCharacterMessage()).isNotBlank();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getCompletedAt()).isNotNull();
-        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedMission.getIdempotencyKey()).isNull();
         assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(savedAnswer.getAnsweredAt()).isNotNull();
         UserMemory memory = findMemory(
@@ -1021,26 +1004,42 @@ class MissionServiceTest {
         assertThat(memory.getContent()).contains("물 한 컵을 마셨어");
         assertThat(memory.getImportance()).isEqualTo(70);
         assertThat(memory.getMetadataJson().get("missionId").asLong()).isEqualTo(created.getMission().getId());
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedOutbox.getAttemptCount()).isZero();
         assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
-        assertThat(savedCharacterExpOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedCharacterExpOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedCharacterExpOutbox.getAttemptCount()).isZero();
         assertThat(savedCharacterExpOutbox.getIdempotencyKey()).isEqualTo("MISSION_CHARACTER_EXP:" + created.getMission().getId());
-        verify(walletRewardClient).earnMissionReward(
-                USER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_REWARD:" + created.getMission().getId()
+        ArgumentCaptor<StarPieceEarnRequestedEvent> rewardEventCaptor =
+                ArgumentCaptor.forClass(StarPieceEarnRequestedEvent.class);
+        verify(kafkaTemplate).send(
+                org.mockito.ArgumentMatchers.eq("star-piece-earn-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_REWARD:" + created.getMission().getId()),
+                rewardEventCaptor.capture()
         );
-        verify(characterExpClient).grantMissionCompletionExp(
-                USER_ID,
-                CHARACTER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
+        StarPieceEarnRequestedEvent rewardEvent = rewardEventCaptor.getValue();
+        assertThat(rewardEvent.getOutboxId()).isEqualTo(savedOutbox.getId());
+        assertThat(rewardEvent.getUserId()).isEqualTo(USER_ID);
+        assertThat(rewardEvent.getAmount()).isEqualTo(10);
+        assertThat(rewardEvent.getReason()).isEqualTo("MISSION_REWARD");
+        assertThat(rewardEvent.getRefType()).isEqualTo("MISSION");
+        assertThat(rewardEvent.getRefId()).isEqualTo(created.getMission().getId());
+        assertThat(rewardEvent.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        ArgumentCaptor<MissionCharacterExpRequestedEvent> expEventCaptor =
+                ArgumentCaptor.forClass(MissionCharacterExpRequestedEvent.class);
+        verify(kafkaTemplate).send(
+                org.mockito.ArgumentMatchers.eq("mission-character-exp-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_CHARACTER_EXP:" + created.getMission().getId()),
+                expEventCaptor.capture()
         );
-        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+        MissionCharacterExpRequestedEvent expEvent = expEventCaptor.getValue();
+        assertThat(expEvent.getOutboxId()).isEqualTo(savedCharacterExpOutbox.getId());
+        assertThat(expEvent.getMissionId()).isEqualTo(created.getMission().getId());
+        assertThat(expEvent.getUserId()).isEqualTo(USER_ID);
+        assertThat(expEvent.getCharacterId()).isEqualTo(CHARACTER_ID);
+        assertThat(expEvent.getExpAmount()).isEqualTo(10);
+        assertThat(expEvent.getIdempotencyKey()).isEqualTo("MISSION_CHARACTER_EXP:" + created.getMission().getId());
+        verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1159,7 +1158,7 @@ class MissionServiceTest {
     }
 
     @Test
-    void COMPLETED_미션에_같은_답변을_다시_제출하면_wallet_적립을_다시_호출하지_않는다() {
+    void COMPLETED_미션에_같은_답변을_다시_제출하면_보상_요청을_다시_발행하지_않는다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
         missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
@@ -1172,18 +1171,16 @@ class MissionServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
         assertThat(response.getAnswer().getText()).isEqualTo("완료했어");
-        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
-        assertThat(response.hasWallet()).isTrue();
-        assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING);
+        assertThat(response.hasWallet()).isFalse();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
-        verify(walletRewardClient, times(1)).earnMissionReward(
-                USER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_REWARD:" + created.getMission().getId()
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
+        verify(kafkaTemplate, times(1)).send(
+                org.mockito.ArgumentMatchers.eq("star-piece-earn-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_REWARD:" + created.getMission().getId()),
+                any(StarPieceEarnRequestedEvent.class)
         );
-        verify(walletRewardClient, times(1)).getWalletStarPiece(USER_ID);
+        verify(walletRewardClient, never()).getWalletStarPiece(USER_ID);
     }
 
     @Test
@@ -1203,11 +1200,11 @@ class MissionServiceTest {
     }
 
     @Test
-    void wallet_보상_지급이_실패하면_미션은_COMPLETED지만_보상_marker는_남기지_않는다() {
+    void 보상_Kafka_발행이_실패하면_미션은_COMPLETED지만_보상_marker는_남기지_않는다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+        when(kafkaTemplate.send(anyString(), anyString(), any(StarPieceEarnRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"));
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1236,8 +1233,8 @@ class MissionServiceTest {
     void reward_marker가_없는_COMPLETED_미션은_같은_답변_재시도_시_PENDING을_반환한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+        when(kafkaTemplate.send(anyString(), anyString(), any(StarPieceEarnRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"));
 
         SubmitCompletionAnswerResponse first = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1261,13 +1258,12 @@ class MissionServiceTest {
         assertThat(savedMission.getIdempotencyKey()).isNull();
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PENDING);
         assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
-        verify(walletRewardClient, times(1)).earnMissionReward(
-                USER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_REWARD:" + created.getMission().getId()
+        verify(kafkaTemplate, times(1)).send(
+                org.mockito.ArgumentMatchers.eq("star-piece-earn-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_REWARD:" + created.getMission().getId()),
+                any(StarPieceEarnRequestedEvent.class)
         );
-        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1278,8 +1274,8 @@ class MissionServiceTest {
     void 캐릭터_경험치_지급이_실패해도_미션은_COMPLETED이고_경험치는_PENDING으로_남긴다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
+        when(kafkaTemplate.send(anyString(), anyString(), any(MissionCharacterExpRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"));
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1291,7 +1287,7 @@ class MissionServiceTest {
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
 
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
-        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING);
         assertThat(response.hasCharacterExp()).isTrue();
         assertThat(response.getCharacterExp().getExpAmount()).isEqualTo(10);
         assertThat(response.getCharacterExp().getExpGained()).isZero();
@@ -1299,27 +1295,16 @@ class MissionServiceTest {
         assertThat(expOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PENDING);
         assertThat(expOutbox.getAttemptCount()).isEqualTo(1);
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
-        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedMission.getIdempotencyKey()).isNull();
     }
 
     @Test
     void 캐릭터_경험치_outbox_스케줄러는_PENDING_경험치를_같은_멱등키로_재처리한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED))
-                .thenAnswer(invocation -> {
-                    Long characterId = invocation.getArgument(1);
-                    int expAmount = invocation.getArgument(3);
-                    return new CharacterExpGrantResult(
-                            characterId,
-                            expAmount,
-                            characterGrowth(0),
-                            characterGrowth(expAmount),
-                            false,
-                            false
-                    );
-                });
+        when(kafkaTemplate.send(anyString(), anyString(), any(MissionCharacterExpRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"))
+                .thenReturn(null);
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1336,14 +1321,12 @@ class MissionServiceTest {
 
         MissionOutboxEvent savedOutbox = findCharacterExpOutbox(created.getMission().getId());
         assertThat(succeededCount).isEqualTo(1);
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
-        verify(characterExpClient, times(2)).grantMissionCompletionExp(
-                USER_ID,
-                CHARACTER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
+        verify(kafkaTemplate, times(2)).send(
+                org.mockito.ArgumentMatchers.eq("mission-character-exp-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_CHARACTER_EXP:" + created.getMission().getId()),
+                any(MissionCharacterExpRequestedEvent.class)
         );
     }
 
@@ -1351,9 +1334,9 @@ class MissionServiceTest {
     void 보상_outbox_스케줄러는_PENDING_보상을_같은_멱등키로_재처리한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
-                .thenReturn(new WalletRewardResult(110, 9001L));
+        when(kafkaTemplate.send(anyString(), anyString(), any(StarPieceEarnRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"))
+                .thenReturn(null);
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1372,16 +1355,15 @@ class MissionServiceTest {
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
         assertThat(succeededCount).isEqualTo(1);
-        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedMission.getIdempotencyKey()).isNull();
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
-        verify(walletRewardClient, times(2)).earnMissionReward(
-                USER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_REWARD:" + created.getMission().getId()
+        verify(kafkaTemplate, times(2)).send(
+                org.mockito.ArgumentMatchers.eq("star-piece-earn-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_REWARD:" + created.getMission().getId()),
+                any(StarPieceEarnRequestedEvent.class)
         );
-        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1392,11 +1374,8 @@ class MissionServiceTest {
     void 보상_outbox_재처리_성공_알림이_실패해도_보상_성공은_유지된다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
-                .thenReturn(new WalletRewardResult(110, 9001L));
         doThrow(new RuntimeException("notification unavailable"))
-                .when(notificationPushClient)
+                .when(missionNotificationKafkaPublisher)
                 .sendMissionRewardRecoveredNotification(USER_ID, created.getMission().getId(), 10);
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
@@ -1404,21 +1383,20 @@ class MissionServiceTest {
                 created.getMission().getId(),
                 "완료했어"
         );
-        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING);
         assertThat(response.hasWallet()).isFalse();
 
         MissionOutboxEvent pendingOutbox = findRewardOutbox(created.getMission().getId());
-        ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
-        missionOutboxEventRepository.saveAndFlush(pendingOutbox);
-
-        int succeededCount = missionRewardDispatcher.dispatchDue(10);
+        missionRewardDispatcher.markSucceeded(
+                pendingOutbox.getId(),
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
 
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
-        assertThat(succeededCount).isEqualTo(1);
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
-        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+        verify(missionNotificationKafkaPublisher).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
                 10
@@ -1426,15 +1404,46 @@ class MissionServiceTest {
 
         // Prometheus Counter 및 Gauge 검증
         var counter = meterRegistry.find("outbox.events.processed")
-                .tag("status", "SUCCESS")
+                .tag("status", "PUBLISHED")
                 .counter();
         assertThat(counter).isNotNull();
         assertThat(counter.count()).isPositive();
-        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("status")).isEqualTo("PUBLISHED");
         assertThat(counter.getId().getTag("aggregate_type")).isEqualTo("MISSION");
 
         double count = meterRegistry.find("outbox.pending.count").gauge().value();
         assertThat(count).isGreaterThanOrEqualTo(0.0);
+    }
+
+    @Test
+    void 보상_성공_이벤트가_중복_수신되어도_완료_알림은_한_번만_보낸다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        );
+
+        MissionOutboxEvent pendingOutbox = findRewardOutbox(created.getMission().getId());
+        missionRewardDispatcher.markSucceeded(
+                pendingOutbox.getId(),
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
+        missionRewardDispatcher.markSucceeded(
+                pendingOutbox.getId(),
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        verify(missionNotificationKafkaPublisher, times(1)).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
     }
 
     private MissionOutboxEvent findRewardOutbox(Long missionId) {

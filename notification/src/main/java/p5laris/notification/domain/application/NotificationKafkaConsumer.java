@@ -3,6 +3,7 @@ package p5laris.notification.domain.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.p5laris.proto.notification.v1.NotificationType;
 import com.p5laris.proto.notification.v1.SendPushNotificationRequest;
+import com.p5laris.proto.notification.v1.TargetType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -47,7 +48,7 @@ public class NotificationKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, NotificationRequestEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 알림 발송 요청 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}, 멱등키: {}", messagePayload, idempotencyKey, e);
+            log.error("[Kafka] 알림 발송 요청 메시지 역직렬화(JSON 파싱) 실패 - 멱등키: {}", idempotencyKey, e);
             return; // 역직렬화 오류 시 중단
         }
 
@@ -57,14 +58,23 @@ public class NotificationKafkaConsumer {
         try {
             // 1. 이벤트 문자열 타입의 notificationType을 proto enum 타입으로 매핑
             NotificationType protoType = mapToProtoType(event.notificationType());
+            TargetType targetType = mapToTargetType(event.targetType());
 
             // 2. 서비스 호출을 위한 proto Request 빌드
-            SendPushNotificationRequest protoRequest = SendPushNotificationRequest.newBuilder()
+            SendPushNotificationRequest.Builder requestBuilder = SendPushNotificationRequest.newBuilder()
                     .setUserId(event.userId())
                     .setTitle(event.title())
                     .setBody(event.body())
-                    .setNotificationType(protoType)
-                    .build();
+                    .setNotificationType(protoType);
+
+            if (targetType != TargetType.TARGET_TYPE_UNSPECIFIED) {
+                requestBuilder.setTargetType(targetType);
+            }
+            if (event.targetId() != null) {
+                requestBuilder.setTargetId(event.targetId());
+            }
+
+            SendPushNotificationRequest protoRequest = requestBuilder.build();
 
             // 3. DB에 알림 이력 생성 및 저장 (동기)
             Notification notification = notificationService.createNotification(protoRequest);
@@ -101,6 +111,26 @@ public class NotificationKafkaConsumer {
                 return NotificationType.valueOf(formatted);
             } catch (Exception ex) {
                 return NotificationType.NOTIFICATION_TYPE_SYSTEM;
+            }
+        }
+    }
+
+    /**
+     * DTO의 targetType 문자열을 protobuf TargetType Enum으로 매핑한다.
+     * 기존 V1 payload처럼 targetType이 없으면 대상 없음으로 처리한다.
+     */
+    private TargetType mapToTargetType(String typeStr) {
+        if (typeStr == null || typeStr.isBlank()) {
+            return TargetType.TARGET_TYPE_UNSPECIFIED;
+        }
+        try {
+            return TargetType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            String formatted = "TARGET_TYPE_" + typeStr.toUpperCase();
+            try {
+                return TargetType.valueOf(formatted);
+            } catch (Exception ex) {
+                return TargetType.TARGET_TYPE_UNSPECIFIED;
             }
         }
     }

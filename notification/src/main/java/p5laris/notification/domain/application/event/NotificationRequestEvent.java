@@ -2,7 +2,9 @@ package p5laris.notification.domain.application.event;
 
 /**
  * 알림 푸시 요청 이벤트 DTO 입니다.
- * User 모듈의 Outbox 릴레이로부터 'notification-requests' 토픽을 통해 전송받는 데이터 포맷입니다.
+ *
+ * V1 payload는 userId/title/body/notificationType만 포함했고,
+ * V2 payload는 알림 클릭 이동을 위해 targetType/targetId를 선택적으로 포함한다.
  */
 public record NotificationRequestEvent(
         
@@ -16,5 +18,11 @@ public record NotificationRequestEvent(
         String body,
         
         /** 알림 종류 (FCM 발송 및 필터링을 위한 Type 문자열) */
-        String notificationType
+        String notificationType,
+
+        /** 알림 클릭 시 이동할 대상 종류 */
+        String targetType,
+
+        /** 알림 클릭 시 이동할 대상 ID */
+        Long targetId
 ) {}

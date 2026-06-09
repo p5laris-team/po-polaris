@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -19,13 +18,13 @@ import static org.mockito.Mockito.verify;
 class MissionNotificationEventListenerTest {
 
     @Mock
-    private NotificationPushClient notificationPushClient;
+    private MissionNotificationKafkaPublisher missionNotificationKafkaPublisher;
 
     private MissionNotificationEventListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new MissionNotificationEventListener(notificationPushClient);
+        listener = new MissionNotificationEventListener(missionNotificationKafkaPublisher);
     }
 
     @Test
@@ -39,7 +38,7 @@ class MissionNotificationEventListenerTest {
 
         listener.handle(event);
 
-        verify(notificationPushClient).sendMissionOfferNotification(
+        verify(missionNotificationKafkaPublisher).sendMissionOfferNotification(
                 1L,
                 10L,
                 "물 한 잔 마시기"
@@ -57,7 +56,7 @@ class MissionNotificationEventListenerTest {
 
         listener.handle(event);
 
-        verify(notificationPushClient, never()).sendMissionOfferNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionOfferNotification(
                 1L,
                 10L,
                 "물 한 잔 마시기"
@@ -74,7 +73,7 @@ class MissionNotificationEventListenerTest {
         );
 
         doThrow(new RuntimeException("notification unavailable"))
-                .when(notificationPushClient)
+                .when(missionNotificationKafkaPublisher)
                 .sendMissionOfferNotification(1L, 10L, "물 한 잔 마시기");
 
         assertThatCode(() -> listener.handle(event)).doesNotThrowAnyException();
@@ -91,7 +90,7 @@ class MissionNotificationEventListenerTest {
 
         listener.handle(event);
 
-        verify(notificationPushClient, never()).sendMissionOfferNotification(
+        verify(missionNotificationKafkaPublisher, never()).sendMissionOfferNotification(
                 null,
                 10L,
                 "물 한 잔 마시기"

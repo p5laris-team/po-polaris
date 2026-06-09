@@ -7,15 +7,15 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import p5laris.user.domain.application.event.ItemPurchaseRequestedEvent;
+import p5laris.user.domain.application.event.StarPieceEarnFailedEvent;
+import p5laris.user.domain.application.event.StarPieceEarnRequestedEvent;
+import p5laris.user.domain.application.event.StarPieceEarnedEvent;
 import p5laris.user.domain.application.event.StarPieceSpentEvent;
 import p5laris.user.domain.application.event.StarPieceSpendFailedEvent;
 import p5laris.user.domain.domain.entity.StarPieceTransaction;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
-@Slf4j
-@Component
-@RequiredArgsConstructor
 /**
  * User 모듈의 Kafka 메시지 컨슈머 클래스입니다.
  * 
@@ -26,7 +26,14 @@ import p5laris.user.domain.exception.UserException;
  *    - 차감 성공 시: 'star-piece-spent' 이벤트를 발행하여 item 모듈이 구매 처리를 완료할 수 있게 합니다.
  *    - 차감 실패 시: 'star-piece-spend-failed' 이벤트를 발행하여 item 모듈이 구매 트랜잭션을 실패 처리할 수 있게 합니다.
  */
+@Slf4j
+@Component
+@RequiredArgsConstructor
 public class UserKafkaConsumer {
+
+    private static final String STAR_PIECE_EARN_REQUESTED_TOPIC = "star-piece-earn-requested";
+    private static final String STAR_PIECE_EARNED_TOPIC = "star-piece-earned";
+    private static final String STAR_PIECE_EARN_FAILED_TOPIC = "star-piece-earn-failed";
 
     private final WalletService walletService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -114,5 +121,76 @@ public class UserKafkaConsumer {
             kafkaTemplate.send("star-piece-spend-failed", event.getIdempotencyKey(), failEvent);
             log.info("[Kafka] 시스템 오류로 인한 실패 이벤트 발행 완료 - 구매 ID: {}", event.getPurchaseId());
         }
+    }
+
+    /**
+     * 미션/공유/출석 등 다른 모듈이 요청한 별조각 적립을 처리한다.
+     *
+     * 실제 적립 멱등성은 WalletService가 idempotencyKey로 보장하고,
+     * 요청 모듈은 성공/실패 이벤트를 받아 자기 outbox 상태를 확정한다.
+     */
+    @KafkaListener(topics = STAR_PIECE_EARN_REQUESTED_TOPIC, groupId = "user-group")
+    public void handleStarPieceEarnRequested(String messagePayload) {
+        StarPieceEarnRequestedEvent event;
+        try {
+            event = objectMapper.readValue(messagePayload, StarPieceEarnRequestedEvent.class);
+        } catch (Exception e) {
+            log.error("[Kafka] 별조각 적립 요청 메시지 역직렬화 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            return;
+        }
+
+        log.info("[Kafka] 별조각 적립 요청 수신. reason={}, refType={}, refId={}, outboxId={}",
+                event.getReason(), event.getRefType(), event.getRefId(), event.getOutboxId());
+
+        try {
+            StarPieceTransaction tx = walletService.earnStarPiece(
+                    event.getUserId(),
+                    event.getAmount(),
+                    event.getReason(),
+                    event.getRefType(),
+                    event.getRefId(),
+                    event.getIdempotencyKey()
+            );
+
+            StarPieceEarnedEvent earnedEvent = StarPieceEarnedEvent.builder()
+                    .outboxId(event.getOutboxId())
+                    .userId(event.getUserId())
+                    .amount(event.getAmount())
+                    .reason(event.getReason())
+                    .refType(event.getRefType())
+                    .refId(event.getRefId())
+                    .idempotencyKey(event.getIdempotencyKey())
+                    .balanceAfter(tx.getBalanceAfter())
+                    .transactionId(tx.getId())
+                    .build();
+
+            kafkaTemplate.send(STAR_PIECE_EARNED_TOPIC, event.getIdempotencyKey(), earnedEvent);
+            log.info("[Kafka] 별조각 적립 성공 이벤트 발행. reason={}, refId={}, transactionId={}",
+                    event.getReason(), event.getRefId(), tx.getId());
+        } catch (UserException e) {
+            publishEarnFailed(event, e.getErrorCode().getCode());
+        } catch (Exception e) {
+            log.error("[Kafka] 별조각 적립 처리 중 시스템 오류. reason={}, refId={}",
+                    event.getReason(), event.getRefId(), e);
+            publishEarnFailed(event, "SYSTEM_ERROR");
+        }
+    }
+
+    private void publishEarnFailed(StarPieceEarnRequestedEvent event, String errorCode) {
+        StarPieceEarnFailedEvent failedEvent = StarPieceEarnFailedEvent.builder()
+                .outboxId(event.getOutboxId())
+                .userId(event.getUserId())
+                .amount(event.getAmount())
+                .reason(event.getReason())
+                .refType(event.getRefType())
+                .refId(event.getRefId())
+                .idempotencyKey(event.getIdempotencyKey())
+                .errorCode(errorCode)
+                .build();
+
+        kafkaTemplate.send(STAR_PIECE_EARN_FAILED_TOPIC, event.getIdempotencyKey(), failedEvent);
+        log.warn("[Kafka] 별조각 적립 실패 이벤트 발행. reason={}, refId={}, errorCode={}",
+                event.getReason(), event.getRefId(), errorCode);
     }
 }

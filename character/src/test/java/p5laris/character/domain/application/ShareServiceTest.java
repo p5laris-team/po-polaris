@@ -37,9 +37,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -125,8 +125,8 @@ class ShareServiceTest {
     }
 
     @Test
-    @DisplayName("createShareEvent credits wallet for today's first share reward")
-    void createShareEvent_firstReward_creditsWallet() throws Exception {
+    @DisplayName("createShareEvent publishes first share reward request and returns PENDING")
+    void createShareEvent_firstReward_publishesRewardRequest() throws Exception {
         runTransactionTemplateCallbacks();
         ShareCard card = createShareCard(800L, 1L, 10L);
         when(shareCardRepository.findById(800L)).thenReturn(Optional.of(card));
@@ -146,16 +146,13 @@ class ShareServiceTest {
             ReflectionTestUtils.setField(outbox, "id", 950L);
             return outbox;
         });
-        when(shareRewardDispatcher.dispatchNow(950L))
-                .thenReturn(new ShareRewardWalletClient.WalletRewardResult(110, 700L));
-
         var result = shareService.createShareEvent(1L, 800L, "KAKAO", "LINK", "client-key");
 
         assertEquals(900L, result.shareEventId());
-        assertTrue(result.rewardPaid());
+        assertEquals(false, result.rewardPaid());
         assertEquals(10, result.rewardStarPiece());
-        assertEquals(110, result.walletStarPiece());
-        assertEquals(ShareRewardStatus.PAID, result.rewardStatus());
+        assertEquals(0, result.walletStarPiece());
+        assertEquals(ShareRewardStatus.PENDING, result.rewardStatus());
         verify(characterOutboxEventRepository).saveAndFlush(any(CharacterOutboxEvent.class));
         verify(shareRewardDispatcher).dispatchNow(950L);
         verify(shareRewardWalletClient, never()).getWalletStarPiece(anyLong());
@@ -191,7 +188,6 @@ class ShareServiceTest {
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
         assertEquals(ShareRewardStatus.PAID, result.rewardStatus());
-        verify(shareRewardWalletClient, never()).earnShareReward(anyLong(), anyLong(), anyInt(), anyString());
     }
 
     @Test
@@ -218,8 +214,9 @@ class ShareServiceTest {
             ReflectionTestUtils.setField(outbox, "id", 950L);
             return outbox;
         });
-        when(shareRewardDispatcher.dispatchNow(950L))
-                .thenThrow(new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
+        doThrow(new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED))
+                .when(shareRewardDispatcher)
+                .dispatchNow(950L);
         when(characterOutboxEventRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.of(pendingOutbox));
 
         var result = shareService.createShareEvent(1L, 800L, "KAKAO", "LINK", "client-key");
