@@ -363,6 +363,15 @@ public class CharacterService {
             throw mapItemFailure(e);
         }
 
+        eventPublisher.publishEvent(CharacterEventLogEvent.careActionPerformed(
+                character,
+                savedCareLog.getId(),
+                resolvedItemId,
+                actionType,
+                expGained,
+                levelUp
+        ));
+
         return p5laris.character.domain.application.dto.CareActionResponse.builder()
                 .careLogId(savedCareLog.getId())
                 .characterId(characterId)
@@ -437,7 +446,20 @@ public class CharacterService {
                 .beforeLevel(beforeGrowth.level())
                 .afterLevel(afterGrowth.level())
                 .build();
-        characterExpLogRepository.save(expLog);
+        CharacterExpLog savedExpLog = characterExpLogRepository.save(expLog);
+
+        eventPublisher.publishEvent(CharacterEventLogEvent.expGranted(
+                character,
+                savedExpLog.getId(),
+                sourceType,
+                sourceId,
+                expAmount,
+                beforeGrowth.exp(),
+                afterGrowth.exp(),
+                beforeGrowth.level(),
+                afterGrowth.level(),
+                levelUp
+        ));
 
         return GrantCharacterExpResponse.builder()
                 .characterId(characterId)
@@ -473,6 +495,13 @@ public class CharacterService {
         CharacterStoryFragment selected = findNewUnlockableFragment(candidates, unlockedFragmentIds);
         if (selected != null) {
             saveStoryUnlock(userId, characterId, level, selected);
+            eventPublisher.publishEvent(CharacterEventLogEvent.storyUnlocked(
+                    character,
+                    selected.getId(),
+                    selected.getMemoryKey(),
+                    level,
+                    triggerType.name()
+            ));
             return toInteractionResponse(character, level, selected, true, false);
         }
 
@@ -538,6 +567,7 @@ public class CharacterService {
             }
         }
 
+        Long beforeSkinId = character.getEquippedSkinId();
         Long equippedSkinId = itemId;
         if (itemId == null || itemId <= 0) {
             character.unequipSkin();
@@ -545,6 +575,8 @@ public class CharacterService {
         } else {
             character.equipSkin(itemId);
         }
+
+        eventPublisher.publishEvent(CharacterEventLogEvent.skinChanged(character, beforeSkinId, equippedSkinId));
 
         return p5laris.character.domain.application.dto.EquipSkinResponse.builder()
                 .characterId(characterId)

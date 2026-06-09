@@ -16,8 +16,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import p5laris.mission.domain.application.event.MissionCharacterExpRequestedEvent;
+import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
@@ -42,11 +45,8 @@ import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
-import p5laris.mission.domain.application.event.MissionNotificationKafkaPublisher;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
@@ -76,6 +76,7 @@ import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "grpc.server.port=0",
+        "SERVER_PORT=0",
         "grpc.client.notification.address=static://localhost:9098",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
@@ -171,7 +172,7 @@ class MissionServiceTest {
     private AiTextEmbeddingClient aiTextEmbeddingClient;
 
     @MockitoBean
-    private CharacterExpClient characterExpClient;
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     @MockitoBean
     private CharacterProfileClient characterProfileClient;
@@ -189,24 +190,11 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterExpClient, characterProfileClient, onboardingProfileClient, missionNotificationKafkaPublisher);
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, kafkaTemplate, characterProfileClient, onboardingProfileClient, missionNotificationKafkaPublisher);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenAnswer(invocation -> {
-                    Long characterId = invocation.getArgument(1);
-                    int expAmount = invocation.getArgument(3);
-                    return new CharacterExpGrantResult(
-                            characterId,
-                            expAmount,
-                            characterGrowth(0),
-                            characterGrowth(expAmount),
-                            false,
-                            false
-                    );
-                });
         when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
                 .thenReturn(Optional.of("NOVA"));
         when(onboardingProfileClient.findProfile(anyLong()))
@@ -1004,9 +992,8 @@ class MissionServiceTest {
         assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
         assertThat(response.hasCharacterExp()).isTrue();
         assertThat(response.getCharacterExp().getExpAmount()).isEqualTo(10);
-        assertThat(response.getCharacterExp().getExpGained()).isEqualTo(10);
-        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED);
-        assertThat(response.getCharacterExp().getAfterGrowth().getExp()).isEqualTo(10);
+        assertThat(response.getCharacterExp().getExpGained()).isZero();
+        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PROCESSING);
         assertThat(response.getCharacterMessage()).isNotBlank();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getCompletedAt()).isNotNull();
@@ -1024,7 +1011,7 @@ class MissionServiceTest {
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
         assertThat(savedOutbox.getAttemptCount()).isZero();
         assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
-        assertThat(savedCharacterExpOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedCharacterExpOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedCharacterExpOutbox.getAttemptCount()).isZero();
         assertThat(savedCharacterExpOutbox.getIdempotencyKey()).isEqualTo("MISSION_CHARACTER_EXP:" + created.getMission().getId());
         verify(walletRewardClient).earnMissionReward(
@@ -1033,13 +1020,20 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
-        verify(characterExpClient).grantMissionCompletionExp(
-                USER_ID,
-                CHARACTER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
+        ArgumentCaptor<MissionCharacterExpRequestedEvent> expEventCaptor =
+                ArgumentCaptor.forClass(MissionCharacterExpRequestedEvent.class);
+        verify(kafkaTemplate).send(
+                org.mockito.ArgumentMatchers.eq("mission-character-exp-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_CHARACTER_EXP:" + created.getMission().getId()),
+                expEventCaptor.capture()
         );
+        MissionCharacterExpRequestedEvent expEvent = expEventCaptor.getValue();
+        assertThat(expEvent.getOutboxId()).isEqualTo(savedCharacterExpOutbox.getId());
+        assertThat(expEvent.getMissionId()).isEqualTo(created.getMission().getId());
+        assertThat(expEvent.getUserId()).isEqualTo(USER_ID);
+        assertThat(expEvent.getCharacterId()).isEqualTo(CHARACTER_ID);
+        assertThat(expEvent.getExpAmount()).isEqualTo(10);
+        assertThat(expEvent.getIdempotencyKey()).isEqualTo("MISSION_CHARACTER_EXP:" + created.getMission().getId());
         verify(missionNotificationKafkaPublisher, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
                 created.getMission().getId(),
@@ -1278,8 +1272,8 @@ class MissionServiceTest {
     void 캐릭터_경험치_지급이_실패해도_미션은_COMPLETED이고_경험치는_PENDING으로_남긴다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
+        when(kafkaTemplate.send(anyString(), anyString(), any(MissionCharacterExpRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"));
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1306,20 +1300,9 @@ class MissionServiceTest {
     void 캐릭터_경험치_outbox_스케줄러는_PENDING_경험치를_같은_멱등키로_재처리한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
-        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED))
-                .thenAnswer(invocation -> {
-                    Long characterId = invocation.getArgument(1);
-                    int expAmount = invocation.getArgument(3);
-                    return new CharacterExpGrantResult(
-                            characterId,
-                            expAmount,
-                            characterGrowth(0),
-                            characterGrowth(expAmount),
-                            false,
-                            false
-                    );
-                });
+        when(kafkaTemplate.send(anyString(), anyString(), any(MissionCharacterExpRequestedEvent.class)))
+                .thenThrow(new RuntimeException("kafka publish failed"))
+                .thenReturn(null);
 
         SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -1336,14 +1319,12 @@ class MissionServiceTest {
 
         MissionOutboxEvent savedOutbox = findCharacterExpOutbox(created.getMission().getId());
         assertThat(succeededCount).isEqualTo(1);
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PROCESSING);
         assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
-        verify(characterExpClient, times(2)).grantMissionCompletionExp(
-                USER_ID,
-                CHARACTER_ID,
-                created.getMission().getId(),
-                10,
-                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
+        verify(kafkaTemplate, times(2)).send(
+                org.mockito.ArgumentMatchers.eq("mission-character-exp-requested"),
+                org.mockito.ArgumentMatchers.eq("MISSION_CHARACTER_EXP:" + created.getMission().getId()),
+                any(MissionCharacterExpRequestedEvent.class)
         );
     }
 

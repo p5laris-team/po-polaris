@@ -5,16 +5,16 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.mission.domain.application.event.MissionCharacterExpRequestedEvent;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.config.MissionRewardOutboxProperties;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
-import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -31,8 +31,10 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class MissionCharacterExpDispatcher {
 
+    private static final String EXP_REQUESTED_TOPIC = "mission-character-exp-requested";
+
     private final MissionOutboxEventRepository missionOutboxEventRepository;
-    private final CharacterExpClient characterExpClient;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
@@ -40,11 +42,11 @@ public class MissionCharacterExpDispatcher {
     private final Clock clock;
     private final MeterRegistry meterRegistry;
 
-    public CharacterExpGrantResult dispatchNow(Long outboxId) {
+    public void dispatchNow(Long outboxId) {
         CharacterExpDispatchCommand command = claim(outboxId, true)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
 
-        return dispatchClaimed(command);
+        dispatchClaimed(command);
     }
 
     public int dispatchDue(int batchSize) {
@@ -68,7 +70,7 @@ public class MissionCharacterExpDispatcher {
                 dispatchClaimed(command.get());
                 succeededCount++;
             } catch (MissionException e) {
-                log.warn("미션 캐릭터 경험치 outbox 발송 실패. outboxId={}, missionId={}, errorCode={}",
+                log.warn("미션 캐릭터 경험치 outbox Kafka 발행 실패. outboxId={}, missionId={}, errorCode={}",
                         command.get().outboxId(), command.get().missionId(), e.getErrorCode().getCode());
             }
         }
@@ -127,6 +129,7 @@ public class MissionCharacterExpDispatcher {
                     missionId,
                     payload.userId(),
                     payload.characterId(),
+                    payload.difficulty(),
                     payload.expAmount(),
                     outbox.getIdempotencyKey()
             );
@@ -137,27 +140,23 @@ public class MissionCharacterExpDispatcher {
         }
     }
 
-    /*
-     * gRPC 호출은 mission DB 트랜잭션 밖에서 수행한다.
-     * character 모듈이 멱등 로그를 보유하므로, 재시도되어도 같은 미션 완료 경험치는 한 번만 지급된다.
-     */
-    private CharacterExpGrantResult dispatchClaimed(CharacterExpDispatchCommand command) {
+    private void dispatchClaimed(CharacterExpDispatchCommand command) {
         try {
-            CharacterExpGrantResult result = characterExpClient.grantMissionCompletionExp(
-                    command.userId(),
-                    command.characterId(),
-                    command.missionId(),
-                    command.expAmount(),
-                    command.idempotencyKey()
-            );
-            markSucceeded(command);
+            MissionCharacterExpRequestedEvent event = MissionCharacterExpRequestedEvent.builder()
+                    .outboxId(command.outboxId())
+                    .missionId(command.missionId())
+                    .userId(command.userId())
+                    .characterId(command.characterId())
+                    .difficulty(command.difficulty())
+                    .expAmount(command.expAmount())
+                    .idempotencyKey(command.idempotencyKey())
+                    .build();
+            kafkaTemplate.send(EXP_REQUESTED_TOPIC, command.idempotencyKey(), event);
 
             meterRegistry.counter("outbox.events.processed",
-                    "status", "SUCCESS",
+                    "status", "PUBLISHED",
                     "aggregate_type", "MISSION"
             ).increment();
-
-            return result;
         } catch (MissionException e) {
             markFailed(command, e.getMessage());
 
@@ -179,12 +178,27 @@ public class MissionCharacterExpDispatcher {
         }
     }
 
-    private void markSucceeded(CharacterExpDispatchCommand command) {
+    public void markSucceeded(Long outboxId, String idempotencyKey) {
         transactionTemplate.executeWithoutResult(status -> {
-            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(command.outboxId())
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(outboxId)
                     .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
+            if (!isMissionCharacterExpEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED);
+            }
             outbox.markSucceeded(LocalDateTime.now(clock));
         });
+    }
+
+    public void markFailed(Long outboxId, String idempotencyKey, String errorMessage) {
+        CharacterExpDispatchCommand command = transactionTemplate.execute(status -> {
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(outboxId)
+                    .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
+            if (!isMissionCharacterExpEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED);
+            }
+            return toCommand(outbox);
+        });
+        markFailed(command, errorMessage);
     }
 
     private void markFailed(CharacterExpDispatchCommand command, String errorMessage) {
@@ -206,6 +220,7 @@ public class MissionCharacterExpDispatcher {
             Long missionId,
             Long userId,
             Long characterId,
+            String difficulty,
             int expAmount,
             String idempotencyKey
     ) {

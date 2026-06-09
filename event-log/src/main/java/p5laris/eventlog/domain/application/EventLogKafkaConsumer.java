@@ -15,107 +15,71 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Event-log 모듈의 Kafka 메시지 컨슈머 클래스입니다.
- * 
- * [역할]
- * 1. 각 모듈의 '*-event-logs' 토픽을 구독하여 비동기로 넘어오는 이벤트를 수신합니다.
- * 2. 수신한 JSON 메시지에서 비즈니스 속성을 추출하여 공통 EventLogRequest DTO를 생성합니다.
- * 3. 멱등키(Kafka Message Key)를 기반으로 중복 저장을 방어하면서 EventLogService를 통해 DB에 로그를 최종 적재합니다.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class EventLogKafkaConsumer {
 
-    private static final Map<String, String> SOURCE_SERVICE_BY_TOPIC = Map.of(
-            "user-event-logs", "user",
-            "item-event-logs", "item",
-            "mission-event-logs", "mission",
-            "ai-event-logs", "ai"
-    );
-
     private final EventLogService eventLogService;
     private final ObjectMapper objectMapper;
 
-    /**
-     * 각 모듈의 이벤트 로그 토픽으로부터 유입되는 메시지를 처리하는 리스너 메서드입니다.
-     *
-     * @param messagePayload JSON 포맷의 이벤트 정보 문자열
-     * @param idempotencyKey 중복 차단용 멱등키 (Kafka Message Key)
-     * @param topic 메시지가 인입된 카프카 토픽명
-     */
     @KafkaListener(
-            topics = {"user-event-logs", "item-event-logs", "mission-event-logs", "ai-event-logs"},
+            topics = {
+                    "user-event-logs",
+                    "item-event-logs",
+                    "character-event-logs",
+                    "mission-event-logs",
+                    "ai-event-logs"
+            },
             groupId = "event-log-group"
     )
     public void consumeEventLog(
-            String messagePayload, 
+            String messagePayload,
             @Header(KafkaHeaders.RECEIVED_KEY) String idempotencyKey,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic
     ) {
-        log.info("[Kafka Consumer] 이벤트 로그 수신 - 토픽: {}, 멱등키(Key): {}", topic, idempotencyKey);
-        
-        try {
-            String sourceService = resolveSourceService(topic);
+        log.info("[Kafka Consumer] 이벤트 로그 수신 - topic={}, key={}", topic, idempotencyKey);
 
-            // 1. JSON 형태의 원시 메시지를 공통 Map 구조로 역직렬화
+        try {
             @SuppressWarnings("unchecked")
             Map<String, Object> rawEvent = objectMapper.readValue(messagePayload, Map.class);
 
-            // 2. 이벤트 비즈니스 필드 추출 및 타입 캐스팅
             String eventType = (String) rawEvent.get("eventType");
-            
             Number userIdNum = (Number) rawEvent.get("userId");
             Long userId = userIdNum != null ? userIdNum.longValue() : null;
-            
             String refType = (String) rawEvent.get("refType");
-            
             Number refIdNum = (Number) rawEvent.get("refId");
             Long refId = refIdNum != null ? refIdNum.longValue() : null;
-            
-            // metadata 맵 정보는 JSON String 포맷으로 재직렬화하여 DB 컬럼에 삽입 준비
-            Object rawMetadata = rawEvent.get("metadata");
-            String propertiesJson = rawMetadata != null ? objectMapper.writeValueAsString(rawMetadata) : null;
-            
-            // 3. 발생 시각(occurredAt) 파싱 처리
+
+            Object rawProperties = rawEvent.get("metadata");
+            if (rawProperties == null) {
+                rawProperties = rawEvent.get("properties");
+            }
+            String propertiesJson = rawProperties != null ? objectMapper.writeValueAsString(rawProperties) : null;
+
             String occurredAtStr = (String) rawEvent.get("occurredAt");
-            LocalDateTime occurredAt = occurredAtStr != null 
-                    ? OffsetDateTime.parse(occurredAtStr).toLocalDateTime() 
+            LocalDateTime occurredAt = occurredAtStr != null
+                    ? OffsetDateTime.parse(occurredAtStr).toLocalDateTime()
                     : LocalDateTime.now();
 
-            // 4. 서비스 레이어 호출을 위한 EventLogRequest DTO 빌드
-            // Kafka key를 eventId로 전환해 consumer 재시도나 중복 메시지를 멱등 처리한다.
             EventLogRequest request = new EventLogRequest(
                     toEventId(idempotencyKey),
                     eventType,
-                    sourceService,
+                    resolveSourceService(topic),
                     userId,
-                    null,              // anonymousId
+                    null,
                     refType,
                     refId,
                     propertiesJson,
-                    null,              // contextJson
+                    null,
                     occurredAt
             );
 
-            // 5. 비즈니스 서비스 호출 (내부적으로 existByEventId를 통해 중복 저장 방지함)
             eventLogService.recordEventLog(request);
-            log.info("[Kafka Consumer] 이벤트 로그 적재 처리 완료 - 멱등키: {}", idempotencyKey);
-            
+            log.info("[Kafka Consumer] 이벤트 로그 적재 완료 - key={}", idempotencyKey);
         } catch (Exception e) {
-            log.error("[Kafka Consumer] 이벤트 로그 처리 실패 - 토픽: {}, 멱등키: {}", topic, idempotencyKey, e);
-            // 에러를 던지지 않고 catch하여 로그를 찍고 처리 성공/실패 여부를 모니터링함
-            // (컨슈머 롤백 시 메시지가 무한 재처리되는 브로커 병목을 예방하기 위함)
+            log.error("[Kafka Consumer] 이벤트 로그 처리 실패 - topic={}, key={}", topic, idempotencyKey, e);
         }
-    }
-
-    private String resolveSourceService(String topic) {
-        String sourceService = SOURCE_SERVICE_BY_TOPIC.get(topic);
-        if (sourceService == null) {
-            throw new IllegalArgumentException("지원하지 않는 이벤트 로그 토픽입니다.");
-        }
-        return sourceService;
     }
 
     private UUID toEventId(String idempotencyKey) {
@@ -127,5 +91,16 @@ public class EventLogKafkaConsumer {
         } catch (IllegalArgumentException e) {
             return UUID.nameUUIDFromBytes(idempotencyKey.getBytes(StandardCharsets.UTF_8));
         }
+    }
+
+    private String resolveSourceService(String topic) {
+        if (topic == null || topic.isBlank()) {
+            return "unknown";
+        }
+        int suffixIndex = topic.indexOf("-event-logs");
+        if (suffixIndex > 0) {
+            return topic.substring(0, suffixIndex);
+        }
+        return topic;
     }
 }

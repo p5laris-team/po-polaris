@@ -7,10 +7,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.application.event.CharacterNotificationRequestPublisher;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.CharacterMood;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
-import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 
 import java.util.Optional;
 
@@ -23,7 +23,7 @@ public class CharacterStateNotificationService {
     private static final int MAX_BATCH_SIZE = 1_000;
 
     private final UserCharacterRepository userCharacterRepository;
-    private final NotificationPushClient notificationPushClient;
+    private final CharacterNotificationRequestPublisher notificationRequestPublisher;
     private final TransactionTemplate transactionTemplate;
 
     public int dispatchDueStateNotifications(int batchSize) {
@@ -85,7 +85,7 @@ public class CharacterStateNotificationService {
 
     private boolean requestNotification(NotificationCommand command) {
         try {
-            notificationPushClient.sendCharacterStateNotification(
+            notificationRequestPublisher.requestCharacterStateNotification(
                     command.userId(),
                     command.characterId(),
                     command.characterName(),

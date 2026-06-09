@@ -798,8 +798,11 @@ public class MissionService {
         }
 
         try {
-            CharacterExpGrantResult result = missionCharacterExpDispatcher.dispatchNow(context.characterExpOutboxId());
-            return MissionCompletionCharacterExp.applied(context.characterExpAmount(), result);
+            missionCharacterExpDispatcher.dispatchNow(context.characterExpOutboxId());
+            return MissionCompletionCharacterExp.withoutGrowth(
+                    context.characterExpAmount(),
+                    MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PROCESSING
+            );
         } catch (MissionException e) {
             if (e.getErrorCode() != MissionErrorCode.MISSION_CHARACTER_EXP_FAILED) {
                 throw e;
