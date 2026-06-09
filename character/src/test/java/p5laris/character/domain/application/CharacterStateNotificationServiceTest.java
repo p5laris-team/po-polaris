@@ -9,11 +9,11 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.application.event.CharacterNotificationRequestPublisher;
 import p5laris.character.domain.domain.entity.CharacterType;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.CharacterMood;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
-import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 
 import java.time.Instant;
 import java.util.List;
@@ -34,7 +34,7 @@ class CharacterStateNotificationServiceTest {
     private UserCharacterRepository userCharacterRepository;
 
     @Mock
-    private NotificationPushClient notificationPushClient;
+    private CharacterNotificationRequestPublisher notificationRequestPublisher;
 
     @Mock
     private TransactionTemplate transactionTemplate;
@@ -43,7 +43,7 @@ class CharacterStateNotificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterStateNotificationService(userCharacterRepository, notificationPushClient, transactionTemplate);
+        service = new CharacterStateNotificationService(userCharacterRepository, notificationRequestPublisher, transactionTemplate);
         when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -59,7 +59,7 @@ class CharacterStateNotificationServiceTest {
         int requestedCount = service.dispatchDueStateNotifications(100);
 
         assertThat(requestedCount).isEqualTo(1);
-        verify(notificationPushClient).sendCharacterStateNotification(
+        verify(notificationRequestPublisher).requestCharacterStateNotification(
                 1L,
                 10L,
                 "Mumu",
@@ -76,7 +76,7 @@ class CharacterStateNotificationServiceTest {
         int requestedCount = service.dispatchDueStateNotifications(100);
 
         assertThat(requestedCount).isZero();
-        verify(notificationPushClient, never()).sendCharacterStateNotification(any(), any(), any(), any());
+        verify(notificationRequestPublisher, never()).requestCharacterStateNotification(any(), any(), any(), any());
     }
 
     @Test
@@ -88,7 +88,7 @@ class CharacterStateNotificationServiceTest {
         int requestedCount = service.dispatchDueStateNotifications(100);
 
         assertThat(requestedCount).isZero();
-        verify(notificationPushClient, never()).sendCharacterStateNotification(any(), any(), any(), any());
+        verify(notificationRequestPublisher, never()).requestCharacterStateNotification(any(), any(), any(), any());
     }
 
     @Test
@@ -97,8 +97,8 @@ class CharacterStateNotificationServiceTest {
         ReflectionTestUtils.setField(character, "lastStatDecreasedAt", Instant.now().minusSeconds(6 * 3600));
         mockActiveCharacter(character);
         doThrow(new RuntimeException("notification unavailable"))
-                .when(notificationPushClient)
-                .sendCharacterStateNotification(1L, 10L, "Mumu", CharacterMood.HUNGRY);
+                .when(notificationRequestPublisher)
+                .requestCharacterStateNotification(1L, 10L, "Mumu", CharacterMood.HUNGRY);
 
         assertThatCode(() -> service.dispatchDueStateNotifications(100))
                 .doesNotThrowAnyException();

@@ -12,13 +12,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.application.event.CharacterNotificationRequestPublisher;
 import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
 import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
-import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -55,7 +55,7 @@ class ShareRewardDispatcherTest {
     private ShareRewardWalletClient shareRewardWalletClient;
 
     @Mock
-    private NotificationPushClient notificationPushClient;
+    private CharacterNotificationRequestPublisher notificationRequestPublisher;
 
     @Mock
     private ShareRewardBackoffPolicy shareRewardBackoffPolicy;
@@ -76,7 +76,7 @@ class ShareRewardDispatcherTest {
                 characterOutboxEventRepository,
                 shareLogRepository,
                 shareRewardWalletClient,
-                notificationPushClient,
+                notificationRequestPublisher,
                 shareRewardBackoffPolicy,
                 properties,
                 transactionTemplate,
@@ -119,7 +119,7 @@ class ShareRewardDispatcherTest {
         assertThat(succeededCount).isEqualTo(1);
         assertThat(shareLog.isRewardPaid()).isTrue();
         assertThat(outbox.getStatus()).isEqualTo(CharacterOutboxEventStatus.SUCCEEDED);
-        verify(notificationPushClient).sendShareRewardCompletedNotification(1L, 900L, 10);
+        verify(notificationRequestPublisher).requestShareRewardCompletedNotification(1L, 900L, 10);
 
         // Counter 검증
         var counter = meterRegistry.find("outbox.events.processed").counter();
@@ -139,8 +139,8 @@ class ShareRewardDispatcherTest {
         when(shareRewardWalletClient.earnShareReward(1L, 900L, 10, "SHARE_REWARD:1:2026-06-02"))
                 .thenReturn(new ShareRewardWalletClient.WalletRewardResult(110, 700L));
         doThrow(new RuntimeException("notification unavailable"))
-                .when(notificationPushClient)
-                .sendShareRewardCompletedNotification(1L, 900L, 10);
+                .when(notificationRequestPublisher)
+                .requestShareRewardCompletedNotification(1L, 900L, 10);
 
         int succeededCount = dispatcher.dispatchDue(100);
 

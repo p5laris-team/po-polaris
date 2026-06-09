@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(properties = {
+        "SERVER_PORT=0",
         "spring.datasource.url=jdbc:postgresql://localhost:5432/character",
         "spring.datasource.username=root",
         "spring.datasource.password=12345678",

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.application.event.CharacterNotificationRequestPublisher;
 import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
@@ -14,7 +15,6 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
-import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -35,7 +35,7 @@ public class ShareRewardDispatcher {
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final ShareLogRepository shareLogRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
-    private final NotificationPushClient notificationPushClient;
+    private final CharacterNotificationRequestPublisher notificationRequestPublisher;
     private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
     private final TransactionTemplate transactionTemplate;
@@ -86,7 +86,7 @@ public class ShareRewardDispatcher {
 
     private void requestRewardCompletedNotification(RewardDispatchCommand command) {
         try {
-            notificationPushClient.sendShareRewardCompletedNotification(
+            notificationRequestPublisher.requestShareRewardCompletedNotification(
                     command.userId(),
                     command.shareLogId(),
                     command.rewardStarPiece()
