@@ -41,3 +41,20 @@ out/
 .nx/cache
 .nx/workspace-data
 .nx/self-healing
+
+# Kubernetes local secrets
+k8s/overlays/local/secret.local.yaml
+k8s/overlays/eks/secret.eks.yaml
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+.override.tf
+.override.tf.json
+*_override.tf
+*_override.tf.json
