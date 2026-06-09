@@ -14,6 +14,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
 import papaparse from 'https://jslib.k6.io/papaparse/5.1.1/index.js';
+import exec from 'k6/execution';
 
 // =========================================================================
 // 1. 6대 가상 데이터셋 CSV 로드 및 파싱 (SharedArray를 사용해 메모리 절약)
@@ -43,25 +44,22 @@ const aiLogs = new SharedArray('ai_logs', function () {
 });
 
 // =========================================================================
-// 2. 부하 시나리오 구성 (VU Ramping 설정)
+// 2. 부하 시나리오 구성 (shared-iterations 고정 완주 설정)
 // =========================================================================
-// - 로컬 환경의 자원 고갈 및 커넥션 타임아웃을 예방하기 위해 최대 동시 사용자를 10명으로 조율하고, 점진적으로 ramping 합니다.
+// - 가상 사용자 300명을 기반으로 총 450회의 이터레이션을 수행하여 DB 데이터 10,000건 생성을 보장합니다.
 export const options = {
     scenarios: {
         polaris_stress_test: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '15s', target: 5 },  // 15초 동안 5명으로 서서히 증가 (Warm-up)
-                { duration: '30s', target: 10 }, // 30초 동안 10명 유지 (로컬 안정적인 최대 부하 유지선)
-                { duration: '10s', target: 0 },  // 10초 동안 서서히 기동 중지 (Graceful shutdown)
-            ],
+            executor: 'shared-iterations',
+            vus: 15,                // 로컬 자원 한계를 고려한 15 VUs 유지
+            iterations: 450,         // 10,000건 데이터 생성을 위한 목표 완수 횟수
+            maxDuration: '8m',       // 로컬 환경의 안전 타임아웃
         },
     },
     thresholds: {
-        // AI 장애 주입이나 멱등성 409 차단 코드로 인해 실패율이 잡힐 수 있으므로, 에러율 한계치를 5%가 아닌 넉넉하게 세팅하는 편이 권장됩니다.
-        http_req_failed: ['rate<0.05'], 
-        http_req_duration: ['p(95)<500'], // 95% 요청은 500ms 이하여야 함 (단, AI SSE 스트림은 더 오래 걸릴 수 있음)
+        // AI 장애 주입이나 멱등성 409 차단 코드로 인해 실패율이 잡힐 수 있으므로, 에러율 한계치를 15%로 상향 조정합니다.
+        http_req_failed: ['rate<0.15'], 
+        http_req_duration: ['p(95)<4000'], // AI SSE 스트림 및 SSE 연결 지연을 감안하여 4000ms로 조정
     },
 };
 
@@ -69,8 +67,8 @@ export const options = {
 // 3. 부하 테스트 실행 (가상 유저 루프)
 // =========================================================================
 export default function () {
-    // 가상 유저(VU) 인덱스에 따라 각 유저별 고유 시뮬레이션 데이터를 분배 및 바인딩
-    const index = (__VU - 1) % users.length;
+    // 각 이터레이션 진행 번호에 따라 300명의 유저를 골고루 분배 및 바인딩
+    const index = exec.scenario.iterationInTest % users.length;
     const user = users[index];
     const profile = profiles[index];
     const missionEvent = missionEvents[index % missionEvents.length];

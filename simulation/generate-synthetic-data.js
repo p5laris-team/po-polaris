@@ -227,5 +227,5 @@ function generateAllDatasets(userCount = 100) {
     console.log(`[성공] 6대 가상 데이터셋 및 사전 적재 SQL 파일 출력 완료! (${dataDir}/ 하위)`);
 }
 
-// 기본 유저 규모 100명 설정 후 실행
-generateAllDatasets(100);
+// 기본 유저 규모 300명 설정 후 실행
+generateAllDatasets(300);
