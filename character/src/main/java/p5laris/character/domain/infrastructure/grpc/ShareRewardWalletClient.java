@@ -1,7 +1,5 @@
 package p5laris.character.domain.infrastructure.grpc;
 
-import com.p5laris.proto.user.v1.EarnStarPieceRequest;
-import com.p5laris.proto.user.v1.EarnStarPieceResponse;
 import com.p5laris.proto.user.v1.GetMyWalletRequest;
 import com.p5laris.proto.user.v1.WalletResponse;
 import com.p5laris.proto.user.v1.WalletServiceGrpc;
@@ -19,9 +17,6 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class ShareRewardWalletClient {
 
-    private static final String SHARE_REWARD_REASON = "SHARE_REWARD";
-    private static final String SHARE_REF_TYPE = "SHARE";
-
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
 
@@ -29,35 +24,6 @@ public class ShareRewardWalletClient {
 
     public ShareRewardWalletClient(ShareRewardWalletProperties properties) {
         this.properties = properties;
-    }
-
-    public WalletRewardResult earnShareReward(
-            Long userId,
-            Long shareLogId,
-            int rewardStarPiece,
-            String idempotencyKey
-    ) {
-        try {
-            EarnStarPieceResponse response = deadlineWalletStub().earnStarPiece(
-                    EarnStarPieceRequest.newBuilder()
-                            .setUserId(userId)
-                            .setAmount(rewardStarPiece)
-                            .setReason(SHARE_REWARD_REASON)
-                            .setRefType(SHARE_REF_TYPE)
-                            .setRefId(shareLogId)
-                            .setIdempotencyKey(idempotencyKey)
-                            .build()
-            );
-
-            return new WalletRewardResult(response.getStarPiece(), response.getTransactionId());
-        } catch (StatusRuntimeException e) {
-            log.warn("공유 보상 별조각 지급 실패. userId={}, shareLogId={}, status={}",
-                    userId, shareLogId, e.getStatus().getCode(), e);
-            throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
-        } catch (Exception e) {
-            log.warn("공유 보상 별조각 지급 실패. userId={}, shareLogId={}", userId, shareLogId, e);
-            throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
-        }
     }
 
     public int getWalletStarPiece(Long userId) {
@@ -80,6 +46,4 @@ public class ShareRewardWalletClient {
     private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
         return walletStub.withDeadlineAfter(properties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
-
-    public record WalletRewardResult(int starPiece, Long transactionId) {}
 }
