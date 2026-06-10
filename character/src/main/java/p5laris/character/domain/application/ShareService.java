@@ -141,9 +141,15 @@ public class ShareService {
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
                                              String platform, String shareType,
                                              String idempotencyKey) {
-        ShareRewardCommand command = transactionTemplate.execute(status ->
-                recordShareEvent(userId, shareCardId, platform, shareType, idempotencyKey)
-        );
+        ShareRewardCommand command;
+        try {
+            command = transactionTemplate.execute(status ->
+                    recordShareEvent(userId, shareCardId, platform, shareType, idempotencyKey)
+            );
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            log.warn("[createShareEvent] 중복 멱등키 충돌로 인한 데이터 예외 발생. userId={}, idempotencyKey={}", userId, idempotencyKey);
+            throw new CharacterException(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY);
+        }
 
         if (command.rewardOutboxId() != null) {
             try {
