@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.application.event.CharacterNotificationRequestPublisher;
+import p5laris.character.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
@@ -15,7 +17,6 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
-import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -31,10 +32,13 @@ public class ShareRewardDispatcher {
 
     public static final String AGGREGATE_TYPE_SHARE_LOG = "SHARE_LOG";
     public static final String EVENT_TYPE_SHARE_REWARD_REQUESTED = "SHARE_REWARD_REQUESTED";
+    private static final String STAR_PIECE_EARN_REQUESTED_TOPIC = "star-piece-earn-requested";
+    private static final String SHARE_REWARD_REASON = "SHARE_REWARD";
+    private static final String SHARE_REF_TYPE = "SHARE";
 
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final ShareLogRepository shareLogRepository;
-    private final ShareRewardWalletClient shareRewardWalletClient;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final CharacterNotificationRequestPublisher notificationRequestPublisher;
     private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
@@ -49,10 +53,10 @@ public class ShareRewardDispatcher {
                 repo -> repo.countByStatus(CharacterOutboxEventStatus.PENDING));
     }
 
-    public ShareRewardWalletClient.WalletRewardResult dispatchNow(Long outboxId) {
+    public void dispatchNow(Long outboxId) {
         RewardDispatchCommand command = claim(outboxId, true)
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
-        return dispatchClaimed(command);
+        dispatchClaimed(command);
     }
 
     public int dispatchDue(int batchSize) {
@@ -74,10 +78,9 @@ public class ShareRewardDispatcher {
 
             try {
                 dispatchClaimed(command.get());
-                requestRewardCompletedNotification(command.get());
                 succeededCount++;
             } catch (CharacterException e) {
-                log.warn("공유 보상 outbox 발행에 실패했습니다. outboxId={}, shareLogId={}, errorCode={}",
+                log.warn("공유 보상 outbox Kafka 발행에 실패했습니다. outboxId={}, shareLogId={}, errorCode={}",
                         command.get().outboxId(), command.get().shareLogId(), e.getErrorCode().getCode());
             }
         }
@@ -144,22 +147,23 @@ public class ShareRewardDispatcher {
         }
     }
 
-    private ShareRewardWalletClient.WalletRewardResult dispatchClaimed(RewardDispatchCommand command) {
+    private void dispatchClaimed(RewardDispatchCommand command) {
         try {
-            ShareRewardWalletClient.WalletRewardResult result = shareRewardWalletClient.earnShareReward(
-                    command.userId(),
-                    command.shareLogId(),
-                    command.rewardStarPiece(),
-                    command.idempotencyKey()
-            );
-            markSucceeded(command);
+            StarPieceEarnRequestedEvent event = StarPieceEarnRequestedEvent.builder()
+                    .outboxId(command.outboxId())
+                    .userId(command.userId())
+                    .amount(command.rewardStarPiece())
+                    .reason(SHARE_REWARD_REASON)
+                    .refType(SHARE_REF_TYPE)
+                    .refId(command.shareLogId())
+                    .idempotencyKey(command.idempotencyKey())
+                    .build();
+            kafkaTemplate.send(STAR_PIECE_EARN_REQUESTED_TOPIC, command.idempotencyKey(), event);
 
             meterRegistry.counter("outbox.events.processed",
-                    "status", "SUCCESS",
+                    "status", "PUBLISHED",
                     "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
             ).increment();
-
-            return result;
         } catch (CharacterException e) {
             markFailed(command, e.getMessage());
 
@@ -181,18 +185,49 @@ public class ShareRewardDispatcher {
         }
     }
 
-    private void markSucceeded(RewardDispatchCommand command) {
-        transactionTemplate.executeWithoutResult(status -> {
+    public void markSucceeded(Long outboxId, String idempotencyKey) {
+        RewardDispatchCommand command = transactionTemplate.execute(status -> {
+            CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(outboxId)
+                    .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
+            if (!isShareRewardEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
+            }
+            return toCommand(outbox);
+        });
+        boolean newlySucceeded = markSucceeded(command);
+        if (newlySucceeded) {
+            requestRewardCompletedNotification(command);
+        }
+    }
+
+    private boolean markSucceeded(RewardDispatchCommand command) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             ShareLog shareLog = shareLogRepository.findByIdForUpdate(command.shareLogId())
                     .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
             CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(command.outboxId())
                     .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
 
+            if (shareLog.isRewardPaid() && outbox.getStatus() == CharacterOutboxEventStatus.SUCCEEDED) {
+                return false;
+            }
             if (!shareLog.isRewardPaid()) {
                 shareLog.markRewardPaid();
             }
             outbox.markSucceeded(LocalDateTime.now(clock));
+            return true;
+        }));
+    }
+
+    public void markFailed(Long outboxId, String idempotencyKey, String errorMessage) {
+        RewardDispatchCommand command = transactionTemplate.execute(status -> {
+            CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(outboxId)
+                    .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
+            if (!isShareRewardEvent(outbox) || !outbox.getIdempotencyKey().equals(idempotencyKey)) {
+                throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
+            }
+            return toCommand(outbox);
         });
+        markFailed(command, errorMessage);
     }
 
     private void markFailed(RewardDispatchCommand command, String errorMessage) {

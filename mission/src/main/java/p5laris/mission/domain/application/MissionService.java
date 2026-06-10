@@ -70,7 +70,6 @@ import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
-import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -633,9 +632,9 @@ public class MissionService {
     /**
      * 완료 질문에 대한 텍스트 답변을 저장하고 미션을 COMPLETED 상태로 전환한다.
      *
-     * mission DB 쓰기와 wallet gRPC 호출을 한 트랜잭션에 넣지 않는다.
-     * 답변 저장/상태 전환은 짧은 mission 트랜잭션으로 끝내고, 별조각 지급은 트랜잭션 밖에서 호출한다.
-     * wallet 지급 요청은 mission_outbox_events에 기록하고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
+     * mission DB 쓰기와 wallet 별조각 적립을 한 트랜잭션에 넣지 않는다.
+     * 답변 저장/상태 전환은 짧은 mission 트랜잭션으로 끝내고, 별조각 지급 요청은 Kafka로 발행한다.
+     * wallet 적립 성공 이벤트가 돌아오면 dispatcher가 보상 지급 완료 marker까지 저장한다.
      */
     public SubmitCompletionAnswerResponse submitCompletionAnswer(Long userId, Long missionId, String answerText) {
         String normalizedAnswer = validateAndNormalizeAnswer(answerText);
@@ -748,10 +747,10 @@ public class MissionService {
     }
 
     /**
-     * wallet 보상 지급 결과를 구한다.
+     * wallet 보상 지급 요청 결과를 구한다.
      *
      * 이미 user_missions.idempotency_key가 있으면 보상 지급이 끝난 것으로 보고 새 거래를 만들지 않는다.
-     * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 outbox를 즉시 발송해 중복 지급을 방어한다.
+     * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 Kafka 요청을 발행해 중복 지급을 방어한다.
      */
     private MissionCompletionReward resolveReward(Long userId, MissionCompletionContext context) {
         if (context.rewardAlreadyPaid()) {
@@ -763,8 +762,8 @@ public class MissionService {
         }
 
         try {
-            WalletRewardResult rewardResult = missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
-            return MissionCompletionReward.paid(rewardResult.starPiece());
+            missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
+            return MissionCompletionReward.withoutWallet(MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING);
         } catch (MissionException e) {
             if (e.getErrorCode() != MissionErrorCode.MISSION_REWARD_FAILED) {
                 throw e;

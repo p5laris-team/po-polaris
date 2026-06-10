@@ -1,5 +1,8 @@
 server:
   port: ${SERVER_PORT}
+  tomcat:
+    accept-count: 200
+    max-connections: 8192
 
 spring:
   config:
@@ -22,12 +25,6 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-
   data:
     redis:
       host: ${REDIS_HOST}
@@ -42,6 +39,8 @@ spring:
     driver-class-name: org.postgresql.Driver
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 15
 
   jpa:
     hibernate:

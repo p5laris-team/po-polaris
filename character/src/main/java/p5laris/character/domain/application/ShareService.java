@@ -34,7 +34,7 @@ import java.util.UUID;
  * 공유 카드와 공유 이벤트 API를 처리하는 서비스다.
  *
  * ShareCard / ShareLog 엔티티는 캐릭터 모듈에서 관리한다.
- * 공유 보상 별조각은 지갑 모듈 gRPC와 character outbox 재처리 흐름으로 지급한다.
+ * 공유 보상 별조각은 character outbox와 Kafka 적립 요청/결과 이벤트 흐름으로 지급한다.
  */
 @Slf4j
 @Service
@@ -135,25 +135,31 @@ public class ShareService {
      * 공유 이벤트를 기록하고 하루 1회 공유 보상을 멱등 키 기준으로 처리한다.
      * API 명세 9.3 POST /api/share/v1/share-events
      *
-     * 지갑 지급은 같은 트랜잭션에 묶지 않고 outbox 발행 뒤 즉시 시도하거나 재처리한다.
+     * 지갑 지급은 같은 트랜잭션에 묶지 않고 outbox 발행 뒤 Kafka 결과 이벤트로 확정한다.
      * 보상 지급 실패는 공유 실패로 보지 않고 rewardStatus=PENDING/FAILED로 분리한다.
      */
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
                                              String platform, String shareType,
                                              String idempotencyKey) {
-        ShareRewardCommand command = transactionTemplate.execute(status ->
-                recordShareEvent(userId, shareCardId, platform, shareType, idempotencyKey)
-        );
+        ShareRewardCommand command;
+        try {
+            command = transactionTemplate.execute(status ->
+                    recordShareEvent(userId, shareCardId, platform, shareType, idempotencyKey)
+            );
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            log.warn("[createShareEvent] 중복 멱등키 충돌로 인한 데이터 예외 발생. userId={}, idempotencyKey={}", userId, idempotencyKey);
+            throw new CharacterException(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY);
+        }
 
         if (command.rewardOutboxId() != null) {
             try {
-                int walletStarPiece = shareRewardDispatcher.dispatchNow(command.rewardOutboxId()).starPiece();
+                shareRewardDispatcher.dispatchNow(command.rewardOutboxId());
                 return new ShareEventResult(
                         command.shareLogId(),
-                        true,
+                        false,
                         command.rewardStarPiece(),
-                        walletStarPiece,
-                        ShareRewardStatus.PAID
+                        0,
+                        ShareRewardStatus.PENDING
                 );
             } catch (CharacterException e) {
                 ShareRewardStatus rewardStatus = resolveRewardStatus(
