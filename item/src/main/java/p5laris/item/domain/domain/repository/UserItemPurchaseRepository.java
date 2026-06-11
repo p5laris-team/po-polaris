@@ -11,6 +11,12 @@ public interface UserItemPurchaseRepository extends JpaRepository<UserItemPurcha
     @org.springframework.data.jpa.repository.Query("SELECT p FROM UserItemPurchase p JOIN FETCH p.userItem ui JOIN FETCH ui.item WHERE p.idempotencyKey = :idempotencyKey")
     Optional<UserItemPurchase> findByIdempotencyKey(@org.springframework.data.repository.query.Param("idempotencyKey") String idempotencyKey);
 
-    @org.springframework.data.jpa.repository.Query("SELECT p FROM UserItemPurchase p WHERE p.status = 'UNKNOWN' AND p.nextAttemptAt <= :now ORDER BY p.nextAttemptAt ASC")
-    java.util.List<UserItemPurchase> findUnknownPurchases(@org.springframework.data.repository.query.Param("now") java.time.LocalDateTime now);
+    @org.springframework.data.jpa.repository.Query("SELECT p FROM UserItemPurchase p WHERE " +
+            "(p.status = 'UNKNOWN' AND p.nextAttemptAt <= :now) OR " +
+            "(p.status = 'PENDING' AND p.createdAt <= :pendingThreshold) " +
+            "ORDER BY p.createdAt ASC")
+    java.util.List<UserItemPurchase> findRecoverablePurchases(
+            @org.springframework.data.repository.query.Param("now") java.time.LocalDateTime now,
+            @org.springframework.data.repository.query.Param("pendingThreshold") java.time.LocalDateTime pendingThreshold
+    );
 }

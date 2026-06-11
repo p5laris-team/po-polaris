@@ -34,7 +34,10 @@ public class ItemPurchaseSagaScheduler {
     @Scheduled(fixedDelayString = "10000")
     public void recoverUnknownPurchases() {
         // 1. 에러가 나서 UNKNOWN(또는 PENDING) 상태로 멈춰있는 구매 내역 조회
-        List<UserItemPurchase> unknownPurchases = userItemPurchaseRepository.findUnknownPurchases(LocalDateTime.now());
+        // PENDING 상태의 건은 현재 실행 중인 이벤트 처리와의 충돌 방지를 위해 최소 1분 이상 경과된 건만 조회
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime pendingThreshold = now.minusMinutes(1);
+        List<UserItemPurchase> unknownPurchases = userItemPurchaseRepository.findRecoverablePurchases(now, pendingThreshold);
         
         for (UserItemPurchase purchase : unknownPurchases) {
             try {
