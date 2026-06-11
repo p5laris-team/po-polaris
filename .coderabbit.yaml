@@ -1,0 +1,196 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: ko-KR
+early_access: false
+tone_instructions: >
+  한국어로, P5Laris 팀의 동료 시니어 리뷰어처럼 말하세요. 포폴 레포의 고도화 의도는 존중하되,
+  정합성·멱등성·보안·계약 변경 위험을 근거와 대안 중심으로 짧게 짚어주세요.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  high_level_summary_instructions: |
+    PR 요약, 릴리스 노트, 변경 요약, 표 제목 등 CodeRabbit이 생성하는 본문은 한국어 제목과 한국어 문장으로 작성해주세요.
+    고정 제품 UI 라벨을 제외하고 "Summary", "Walkthrough", "Changes" 같은 영어 섹션명을 새로 만들지 마세요.
+    포트폴리오 레포 관점에서 변경 의도, 영향 범위, 검증 포인트를 짧게 정리해주세요.
+  collapse_walkthrough: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  review_status: true
+  review_details: false
+  commit_status: true
+  fail_commit_status: false
+  poem: false
+  enable_prompt_for_ai_agents: true
+
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!**/.idea/**"
+    - "!**/.vscode/**"
+    - "!**/.nx/**"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/coverage/**"
+    - "!**/gradle-wrapper.jar"
+    - "!package-lock.json"
+    - "!docs/metabase/METABASE_POLARIS_DASHBOARD_IMPORT.json"
+
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        이 저장소는 운영 중인 polaris가 아니라 포트폴리오/고도화 실험용 po-polaris 백엔드 저장소입니다.
+        운영 레포는 보안상 CodeRabbit을 붙이지 않는 닫힌 저장소로 취급하며, 이 저장소와 자동 연결하거나 운영 코드 공개를 요구하지 마세요.
+        운영 MVP와 의도적으로 다른 Kafka, outbox, 결제/지갑 확장 코드는 존재할 수 있습니다.
+        기능 존재 자체보다 문서화된 의도, 운영 레포와의 경계, 데이터 정합성, 보안, 테스트 가능성을 우선 검토해주세요.
+        블로그나 일반론이 아니라 이 저장소의 docs/AGENTS.md, PRD, API 명세, ERD, backend policy를 기준으로 리뷰해주세요.
+
+    - path: "**/src/main/java/**/*.java"
+      instructions: |
+        Java 21, Spring Boot, gRPC, JPA 기반 멀티모듈 서비스 코드로 리뷰해주세요.
+        정확성, 트랜잭션 경계, 멱등성, 동시성, null/예외 처리, 인증 사용자 소유권, 도메인 경계 위반을 우선 확인해주세요.
+        단순 스타일 취향은 동작 안정성이나 유지보수성에 영향을 줄 때만 언급해주세요.
+
+    - path: "**/src/test/java/**/*.java"
+      instructions: |
+        테스트가 실제 실패 가능성을 검증하는지 확인해주세요.
+        별조각 지급/차감, mission 상태 전이, outbox 재처리, Kafka consumer 중복 수신, 인증/소유권, validation 실패 케이스가 빠졌다면 제안해주세요.
+        contextLoads 수준의 약한 테스트, 과한 mock으로 핵심 동작을 가리는 테스트, 시간/순서에 취약한 flaky 테스트를 짚어주세요.
+
+    - path: "gateway/**/*.java"
+      instructions: |
+        외부 REST 진입점과 내부 gRPC 서비스 사이의 경계를 집중 검토해주세요.
+        REST DTO와 protobuf message가 섞이지 않는지, ApiResponse/에러 코드 매핑이 일관적인지, 인증/인가와 request validation이 누락되지 않았는지 확인해주세요.
+        gRPC deadline, timeout, fallback, 장애 전파 방식도 함께 확인해주세요.
+
+    - path: "user/**/*.java"
+      instructions: |
+        user 모듈은 인증, wallet, 별조각 원장, 포폴용 결제 확장 가능성이 함께 있는 영역입니다.
+        결제/지갑 변경은 금액 검증, 멱등키, 중복 콜백, 취소/환불 상태 전이, 거래 내역 누락, 비밀값/개인정보 로그 노출을 우선 확인해주세요.
+        운영 MVP에는 실제 결제가 없다는 점과 포폴 고도화용 결제 실험이 섞이지 않도록 PR 설명과 코드 경계를 확인해주세요.
+
+    - path: "mission/**/*.java"
+      instructions: |
+        미션 제안/거절/완료 상태 전이와 보상 지급 정합성을 우선 검토해주세요.
+        MISSION_REWARD:{missionId} 멱등성, 하루 제한, 완료 답변 저장 후 보상 요청, wallet/character 연동 실패 시 outbox 재처리 흐름을 확인해주세요.
+        AI fallback은 사용자 흐름을 막지 않아야 하며 운영 분석 로그와 사용자 응답이 과하게 결합되지 않아야 합니다.
+
+    - path: "character/**/*.java"
+      instructions: |
+        캐릭터 상태, 돌봄 액션, 스킨 장착, 공유 카드, 공유 보상 흐름을 검토해주세요.
+        상태 수치 범위, 소모품 차감, 경험치 지급, 하루 1회 공유 보상, SHARE_REWARD outbox, wallet 지급 재시도 정합성을 확인해주세요.
+        사용자 원문 답변이나 민감 정보가 로그/이벤트 payload에 남지 않는지도 봐주세요.
+
+    - path: "item/**/*.java"
+      instructions: |
+        아이템 구매/보유/장착/소모 규칙과 별조각 차감 정합성을 집중 검토해주세요.
+        잔액 부족, 중복 구매, 수량 차감, SKIN 중복 보유 금지, 소모품 quantity 음수 방지, 구매 실패 시 원장 불일치 가능성을 확인해주세요.
+
+    - path: "notification/**/*.java"
+      instructions: |
+        알림 저장, Kafka consumer, FCM 발송, 사용자 알림 설정, 방해 금지 시간, 일일 발송 제한을 확인해주세요.
+        알림 실패가 핵심 도메인 트랜잭션을 과하게 실패시키지 않는지, 토큰/개인정보가 로그에 노출되지 않는지 검토해주세요.
+
+    - path: "ai/**/*.java"
+      instructions: |
+        AI provider 호출, timeout, rate limit, JSON parsing 실패, 정책 위반 응답, fallback 문구 흐름을 확인해주세요.
+        프롬프트에 넣는 사용자 context가 과하지 않은지, 응답 구조 검증 후 저장하는지, 실패가 미션/대화 전체 장애로 번지지 않는지 봐주세요.
+
+    - path: "**/domain/application/event/**/*.java"
+      instructions: |
+        도메인 이벤트, Kafka publish/consume, TransactionalEventListener, AFTER_COMMIT 처리의 안정성을 집중 검토해주세요.
+        트랜잭션 커밋 전 외부 발행, 중복 발행, 순서 의존, poison message, retry/backoff 누락, 예외 삼킴으로 인한 데이터 유실 가능성을 확인해주세요.
+
+    - path: "**/*Kafka*.java"
+      instructions: |
+        Kafka 코드는 포폴 고도화 포인트이므로 설계 의도는 존중하되 운영 안정성 기준으로 검토해주세요.
+        topic/key 설계, consumer 멱등성, 역직렬화 호환성, retry/DLT 전략, duplicate delivery, poison message, schema 변경 영향을 확인해주세요.
+
+    - path: "**/*Outbox*.java"
+      instructions: |
+        outbox는 비즈니스 상태와 외부 발행 사이의 정합성 보장 장치로 리뷰해주세요.
+        같은 트랜잭션 저장 여부, 상태 전이, findByIdForUpdate 같은 동시성 제어, attempt_count/backoff, 처리 중 프로세스 종료 복구, 성공 marker 저장 누락을 확인해주세요.
+
+    - path: "proto/src/main/proto/**/*.proto"
+      instructions: |
+        protobuf는 내부 서비스 계약입니다.
+        field number 재사용, 기존 필드 의미 변경, enum 0번 UNSPECIFIED 누락, removed field reserved 누락, optional/default 의미 변경, gateway/client/server 동시 수정 필요성을 확인해주세요.
+
+    - path: "**/src/main/resources/db/migration/*.sql"
+      instructions: |
+        Flyway migration은 배포 후 불변으로 가정하고 리뷰해주세요.
+        데이터 손실, lock 위험, nullable/default/unique/check/index 적절성, 기존 데이터와의 호환성, rolling deployment 리스크를 확인해주세요.
+        payment 관련 테이블은 포폴 고도화 의도와 운영 MVP 분리 근거가 PR에 설명되어 있는지 확인해주세요.
+
+    - path: "**/src/main/resources/application.y*ml"
+      instructions: |
+        설정 파일은 환경별 drift와 보안 위험을 우선 확인해주세요.
+        실제 secret 하드코딩, 운영에 위험한 기본값, 전체 CORS 허용, actuator 노출, timeout/deadline 누락, Kafka bootstrap/DB URL 오염을 짚어주세요.
+
+    - path: "k8s/**/*.yaml"
+      instructions: |
+        Kubernetes 리소스는 로컬/포폴 실험 환경 기준으로 보되, 운영으로 오해될 수 있는 위험한 기본값을 확인해주세요.
+        secret 직접 커밋, resource limit 누락, readiness/liveness probe 누락, service type 노출, namespace/configmap drift를 검토해주세요.
+
+    - path: "docker-compose*.yml"
+      instructions: |
+        Docker Compose는 로컬 개발/포폴 시연용 기준으로 리뷰해주세요.
+        공개 포트, 기본 계정/비밀번호, volume 데이터 유실, Kafka advertised listener, 운영 서비스 오접속 가능성을 확인해주세요.
+
+    - path: "scripts/**/*.sh"
+      instructions: |
+        로컬 스크립트는 실수로 운영/공유 환경을 건드리지 않는지 확인해주세요.
+        set -euo pipefail 필요성, destructive command 보호 장치, kube context 확인, secret 출력, 실행 순서 의존성을 검토해주세요.
+
+    - path: "docs/**/*.md"
+      instructions: |
+        문서는 운영 polaris와 포폴 po-polaris의 범위 차이를 분명히 설명하는지 확인해주세요.
+        API 명세, ERD, PRD, backend policy가 서로 충돌하면 어느 문서가 기준인지 PR에서 명시하도록 제안해주세요.
+
+  auto_review:
+    enabled: false
+    description_keyword: "@coderabbitai review"
+    auto_incremental_review: false
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT REVIEW"
+      - "DRAFT"
+      - "초안"
+
+  tools:
+    presidio:
+      enabled: true
+
+chat:
+  art: false
+  allow_non_org_members: false
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - docs/AGENTS.md
+      - docs/prd/PRD.md
+      - docs/policies/backend-policy-summary.md
+      - docs/sa-docs/01-API-spec.md
+      - docs/sa-docs/02_ERD_Data_Model.md
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
