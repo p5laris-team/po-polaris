@@ -31,7 +31,7 @@ public class ShareRewardKafkaConsumer {
         } catch (Exception e) {
             log.error("[Kafka] 별조각 적립 성공 메시지 역직렬화 실패. payloadLength={}",
                     messagePayload != null ? messagePayload.length() : 0, e);
-            return;
+            throw new IllegalArgumentException("별조각 적립 완료 메시지 역직렬화에 실패했습니다.", e);
         }
 
         if (!isShareReward(event.getReason(), event.getRefType())) {
@@ -56,7 +56,7 @@ public class ShareRewardKafkaConsumer {
         } catch (Exception e) {
             log.error("[Kafka] 별조각 적립 실패 메시지 역직렬화 실패. payloadLength={}",
                     messagePayload != null ? messagePayload.length() : 0, e);
-            return;
+            throw new IllegalArgumentException("별조각 적립 실패 메시지 역직렬화에 실패했습니다.", e);
         }
 
         if (!isShareReward(event.getReason(), event.getRefType())) {

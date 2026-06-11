@@ -77,6 +77,7 @@ import static org.mockito.Mockito.when;
         "grpc.server.port=0",
         "SERVER_PORT=0",
         "grpc.client.notification.address=static://localhost:9098",
+        "spring.kafka.listener.auto-startup=false",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
         "spring.data.redis.password=",

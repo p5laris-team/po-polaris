@@ -79,6 +79,7 @@ public class EventLogKafkaConsumer {
             log.info("[Kafka Consumer] 이벤트 로그 적재 완료 - key={}", idempotencyKey);
         } catch (Exception e) {
             log.error("[Kafka Consumer] 이벤트 로그 처리 실패 - topic={}, key={}", topic, idempotencyKey, e);
+            throw new IllegalStateException("이벤트 로그 메시지 처리에 실패했습니다.", e);
         }
     }
 

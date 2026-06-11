@@ -32,7 +32,7 @@ public class CharacterKafkaConsumer {
             event = objectMapper.readValue(messagePayload, MissionCharacterExpRequestedEvent.class);
         } catch (Exception e) {
             log.error("[Kafka] 미션 캐릭터 경험치 요청 메시지 역직렬화 실패. payload={}", messagePayload, e);
-            return;
+            throw new IllegalArgumentException("미션 캐릭터 경험치 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 미션 캐릭터 경험치 요청 수신. missionId={}, characterId={}, outboxId={}",

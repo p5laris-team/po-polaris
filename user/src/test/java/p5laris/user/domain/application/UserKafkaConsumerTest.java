@@ -130,7 +130,7 @@ class UserKafkaConsumerTest {
 
         assertThatThrownBy(() -> userKafkaConsumer.handleItemPurchaseRequest(objectMapper.writeValueAsString(request)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Failed to process item purchase request");
+                .hasMessageContaining("아이템 구매 요청 처리에 실패했습니다.");
 
         verify(kafkaTemplate, never()).send(eq("star-piece-spend-failed"), anyString(), any());
     }

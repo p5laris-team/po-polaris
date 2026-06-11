@@ -49,7 +49,7 @@ public class NotificationKafkaConsumer {
             event = objectMapper.readValue(messagePayload, NotificationRequestEvent.class);
         } catch (Exception e) {
             log.error("[Kafka] 알림 발송 요청 메시지 역직렬화(JSON 파싱) 실패 - 멱등키: {}", idempotencyKey, e);
-            return; // 역직렬화 오류 시 중단
+            throw new IllegalArgumentException("알림 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 알림 발송 요청 수신 - 사용자: {}, 제목: {}, 타입: {}, 멱등키: {}", 
@@ -85,7 +85,7 @@ public class NotificationKafkaConsumer {
             log.info("[Kafka] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
         } catch (Exception e) {
             log.error("[Kafka] 알림 발송 처리 중 예외 발생 - 멱등키: {}", idempotencyKey, e);
-            // 메시지 유실 방지 및 무한 롤백 차단을 위해 catch 후 로깅 처리
+            throw new IllegalStateException("알림 요청 처리에 실패했습니다.", e);
         }
     }
 
