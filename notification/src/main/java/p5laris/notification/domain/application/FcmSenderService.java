@@ -3,6 +3,7 @@ package p5laris.notification.domain.application;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -83,12 +84,12 @@ public class FcmSenderService {
             } catch (FirebaseMessagingException e) {
                 log.warn("Failed to send message to user: {} token: {}", userId, token.getId(), e);
                 
-                String errorCode = e.getErrorCode().name();
+                String errorCode = resolveDeliveryErrorCode(e);
                 delivery.markFailed(errorCode, e.getMessage());
 
-                if ("UNREGISTERED".equals(errorCode) || "INVALID_ARGUMENT".equals(errorCode)) {
+                if (shouldDeactivateToken(e)) {
                     log.info("Deactivating FCM token: {} due to errorCode: {}", token.getId(), errorCode);
-                    token.deactivate(FcmTokenDeactivatedReason.UNKNOWN);
+                    token.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
                 }
             } catch (Exception e) {
                 log.error("Unexpected error sending FCM message to user: {}", userId, e);
@@ -97,6 +98,25 @@ public class FcmSenderService {
 
             notificationPushDeliveryRepository.save(delivery);
         }
+    }
+
+    static String resolveDeliveryErrorCode(FirebaseMessagingException e) {
+        if (e.getMessagingErrorCode() != null) {
+            return e.getMessagingErrorCode().name();
+        }
+        if (e.getErrorCode() != null) {
+            return e.getErrorCode().name();
+        }
+        return "UNKNOWN";
+    }
+
+    static boolean shouldDeactivateToken(FirebaseMessagingException e) {
+        return shouldDeactivateToken(e.getMessagingErrorCode());
+    }
+
+    static boolean shouldDeactivateToken(MessagingErrorCode messagingErrorCode) {
+        return messagingErrorCode == MessagingErrorCode.UNREGISTERED
+                || messagingErrorCode == MessagingErrorCode.INVALID_ARGUMENT;
     }
 
     private void recordSkippedDelivery(Long notificationId, Long userId, String errorCode, String errorMessage) {

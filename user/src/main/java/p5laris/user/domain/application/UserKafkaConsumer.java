@@ -109,17 +109,8 @@ public class UserKafkaConsumer {
             }
         } catch (Exception e) {
             // 3-2. 시스템 인프라 예외 등 예기치 못한 예외 발생 시
-            log.error("[Kafka] 재화 차감 처리 중 예기치 못한 오류 발생", e);
-            
-            // 시스템 예외가 났을 때 컨슈머에서 무한 재시도를 돌려 병목을 일으키기보다,
-            // 안전망 차원에서 'SYSTEM_ERROR' 코드를 실어 구매 실패 이벤트를 날리고 보상 트랜잭션(롤백)으로 유도함
-            StarPieceSpendFailedEvent failEvent = StarPieceSpendFailedEvent.builder()
-                    .purchaseId(event.getPurchaseId())
-                    .errorCode("SYSTEM_ERROR")
-                    .build();
-            
-            kafkaTemplate.send("star-piece-spend-failed", event.getIdempotencyKey(), failEvent);
-            log.info("[Kafka] 시스템 오류로 인한 실패 이벤트 발행 완료 - 구매 ID: {}", event.getPurchaseId());
+            log.error("[Kafka] 재화 차감 처리 중 시스템 오류 발생. Kafka 재처리를 위해 예외를 전파합니다.", e);
+            throw new IllegalStateException("Failed to process item purchase request", e);
         }
     }
 
