@@ -31,7 +31,14 @@ WHERE w.user_id >= 900001
 GROUP BY w.user_id, w.star_piece
 HAVING w.star_piece <> (500 + COALESCE(SUM(CASE WHEN t.transaction_type = 'EARN' THEN t.amount WHEN t.transaction_type = 'SPEND' THEN -t.amount ELSE 0 END), 0));
 
--- 1-3) 가상 테스트 데이터 삭제 (롤백)
+-- 1-3) 아웃박스(Outbox) 미발행 이벤트 정합성 검사
+-- - 결과 행(Row) 수가 0건이어야 Kafka 장애 복구 후 모든 이벤트가 성공적으로 발행 완료된 것입니다.
+SELECT status, COUNT(*) 
+FROM user_outbox_events 
+WHERE status <> 'SUCCEEDED' 
+GROUP BY status;
+
+-- 1-4) 가상 테스트 데이터 삭제 (롤백)
 -- - 외래키 제약조건에 맞춰 payment_transactions를 payment_orders를 거쳐 서브쿼리로 참조 삭제하도록 수정되었습니다.
 -- - user_outbox_events의 복원도 정상 반영되었습니다.
 BEGIN;
@@ -49,6 +56,15 @@ COMMIT;
 -- =========================================================================
 -- [2] MISSION (미션 / RAG) 데이터베이스 세션에서 실행
 -- =========================================================================
+
+-- 2-1) 아웃박스(Outbox) 미발행 이벤트 정합성 검사
+-- - 결과 행(Row) 수가 0건이어야 Kafka 장애 복구 후 모든 이벤트가 성공적으로 발행 완료된 것입니다.
+SELECT status, COUNT(*) 
+FROM mission_outbox_events 
+WHERE status <> 'SUCCEEDED' 
+GROUP BY status;
+
+-- 2-2) 가상 테스트 데이터 삭제 (롤백)
 BEGIN;
 DELETE FROM user_memories WHERE user_id >= 900001;
 DELETE FROM mission_feedbacks WHERE user_id >= 900001;
@@ -70,7 +86,14 @@ WHERE reward_paid = true
 GROUP BY user_id, share_date 
 HAVING COUNT(*) > 1;
 
--- 3-2) 가상 테스트 데이터 삭제 (롤백)
+-- 3-2) 아웃박스(Outbox) 미발행 이벤트 정합성 검사
+-- - 결과 행(Row) 수가 0건이어야 Kafka 장애 복구 후 모든 이벤트가 성공적으로 발행 완료된 것입니다.
+SELECT status, COUNT(*) 
+FROM character_outbox_events 
+WHERE status <> 'SUCCEEDED' 
+GROUP BY status;
+
+-- 3-3) 가상 테스트 데이터 삭제 (롤백)
 BEGIN;
 DELETE FROM share_logs WHERE user_id >= 900001;
 DELETE FROM share_cards WHERE user_id >= 900001;
@@ -84,6 +107,15 @@ COMMIT;
 -- =========================================================================
 -- [4] ITEM (아이템 / 상점) 데이터베이스 세션에서 실행
 -- =========================================================================
+
+-- 4-1) 아웃박스(Outbox) 미발행 이벤트 정합성 검사
+-- - 결과 행(Row) 수가 0건이어야 Kafka 장애 복구 후 모든 이벤트가 성공적으로 발행 완료된 것입니다.
+SELECT status, COUNT(*) 
+FROM item_outbox_events 
+WHERE status <> 'SUCCEEDED' 
+GROUP BY status;
+
+-- 4-2) 가상 테스트 데이터 삭제 (롤백)
 BEGIN;
 DELETE FROM item_usage_histories WHERE user_id >= 900001;
 DELETE FROM item_purchase_histories WHERE user_id >= 900001;

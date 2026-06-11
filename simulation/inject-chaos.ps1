@@ -64,6 +64,35 @@ try {
     Write-Host "-> Error details: $_" -ForegroundColor DarkRed
 }
 
+# ───────────────────────────────────────────────────────────
+# 3. Kafka Chaos Injection (Stop and Restart Kafka Broker)
+# ───────────────────────────────────────────────────────────
+Write-Host "`n[3/3] Starting Kafka Chaos Injection..." -ForegroundColor Magenta
+
+# 로컬에서 구동 중인 Kafka 브로커 도커 컨테이너명 감지
+$kafkaContainer = docker ps --filter "name=kafka-broker" --format "{{.Names}}" | Select-Object -First 1
+if (-not $kafkaContainer) {
+    $kafkaContainer = docker ps --filter "ancestor=kafka" --format "{{.Names}}" | Select-Object -First 1
+}
+
+if ($kafkaContainer) {
+    Write-Host "-> Detected Kafka container: '$kafkaContainer'" -ForegroundColor Green
+    
+    # Kafka 컨테이너를 일시 정지하여 메시지 브로커 장애 유발 (Outbox 발행 대기 유도)
+    Write-Host "-> Stopping Kafka container..." -ForegroundColor Yellow
+    docker stop $kafkaContainer
+    
+    # 10초 동안 Kafka 셧다운 상태를 유지하며 백엔드 서비스의 Outbox Event가 PENDING/FAILED로 적재되는지 테스트
+    Write-Host "-> Waiting 10s to verify transactional outbox buffering..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 10
+    
+    # 10초 후 Kafka 컨테이너를 다시 구동하여 정상 복구 (이후 outbox 스케줄러에 의한 재처리 및 최종 성공 검증)
+    Write-Host "-> Starting Kafka container to restore..." -ForegroundColor Green
+    docker start $kafkaContainer
+} else {
+    Write-Host "-> [WARNING] Active Kafka container not found. Skipping Kafka chaos injection." -ForegroundColor DarkYellow
+}
+
 Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host " Polaris Chaos Injection Completed!" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
