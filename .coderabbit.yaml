@@ -1,0 +1,94 @@
+language: ko-KR
+tone_instructions: "Be concise, direct, and constructive. Prioritize correctness and production risks over style preferences."
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  review_status: true
+  review_details: true
+  commit_status: true
+  fail_commit_status: false
+  poem: false
+
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!**/.nx/**"
+    - "!**/node_modules/**"
+    - "!**/gradle-wrapper.jar"
+    - "!package-lock.json"
+    - "!docs/metabase/METABASE_POLARIS_DASHBOARD_IMPORT.json"
+
+  path_instructions:
+    - path: "**/src/main/java/**/*.java"
+      instructions: |
+        Review as production Java and Spring Boot code in a multi-module service.
+        Prioritize correctness, transaction boundaries, concurrency, null handling,
+        exception mapping, authorization, input validation, and backward compatibility.
+        Check that infrastructure concerns do not leak into domain logic.
+        Avoid style-only comments unless they affect maintainability or correctness.
+
+    - path: "**/src/test/java/**/*.java"
+      instructions: |
+        Check that tests cover behavior and failure cases, not only application context startup.
+        Flag flaky timing, shared state, weak assertions, and tests that mock away the behavior
+        they intend to verify.
+
+    - path: "**/domain/application/event/**/*.java"
+      instructions: |
+        Pay special attention to idempotency, duplicate delivery, transaction boundaries,
+        retry behavior, event ordering, and partial failure handling.
+
+    - path: "**/*Kafka*.java"
+      instructions: |
+        Check consumer idempotency, acknowledgement and retry behavior, poison messages,
+        serialization compatibility, and whether side effects can be applied more than once.
+
+    - path: "**/*Outbox*.java"
+      instructions: |
+        Verify atomic persistence with business state, safe concurrent polling, retry limits,
+        state transitions, and recovery from process termination between publish and update.
+
+    - path: "proto/src/main/proto/**/*.proto"
+      instructions: |
+        Treat protobuf definitions as public service contracts.
+        Flag field-number reuse, incompatible type changes, removed fields that are not reserved,
+        ambiguous optionality, and changes requiring coordinated rollout.
+
+    - path: "**/src/main/resources/db/migration/*.sql"
+      instructions: |
+        Treat Flyway migrations as immutable after deployment.
+        Check rollback and deployment risk, locks, data loss, constraints, indexes,
+        large-table operations, and compatibility with rolling deployments.
+
+    - path: "**/src/main/resources/application.y*ml"
+      instructions: |
+        Flag hard-coded secrets, unsafe defaults, missing environment placeholders,
+        exposed management endpoints, insecure logging, and configuration drift between modules.
+
+    - path: "gateway/**/*.java"
+      instructions: |
+        Focus on authentication and authorization, token validation, request validation,
+        error mapping, timeout propagation, and trust boundaries between HTTP and gRPC.
+
+    - path: "simulation/**"
+      instructions: |
+        Check that load and chaos scripts cannot accidentally target production,
+        leak credentials, or perform destructive cleanup without explicit safeguards.
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT REVIEW"
+
+chat:
+  art: false
+  allow_non_org_members: false
+  auto_reply: true
