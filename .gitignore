@@ -58,3 +58,9 @@ crash.*.log
 .override.tf.json
 *_override.tf
 *_override.tf.json
+-H
+tmp/
+*.bak.*
+tfplan
+*.tfplan
+iam_policy.json

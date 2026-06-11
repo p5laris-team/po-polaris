@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: p5laris-kafka-topics
+  namespace: p5laris-lab
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: kafka-topics
+          image: apache/kafka:3.7.0
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: p5laris-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+          command:
+            - sh
+            - -lc
+            - |
+              set -eu
+
+              KAFKA_TOPICS="/opt/kafka/bin/kafka-topics.sh"
+
+              for topic in \
+                star-piece-earned \
+                star-piece-earn-failed \
+                star-piece-spent \
+                star-piece-spend-failed \
+                mission-character-exp-requested \
+                mission-character-exp-granted \
+                mission-character-exp-failed \
+                notification-requests
+              do
+                echo "== ensure topic: ${topic} =="
+
+                "${KAFKA_TOPICS}" \
+                  --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" \
+                  --create \
+                  --if-not-exists \
+                  --topic "${topic}" \
+                  --partitions 3 \
+                  --replication-factor 2
+              done
+
+              echo
+              echo "== topic list =="
+              "${KAFKA_TOPICS}" \
+                --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" \
+                --list \
+                | sort
