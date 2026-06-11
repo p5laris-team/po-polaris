@@ -22,6 +22,9 @@ spring:
       properties:
         # 역직렬화 시 신뢰할 수 있는 패키지 범위 지정 (와일드카드 허용)
         spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
   datasource:
     url: ${DB_URL}
