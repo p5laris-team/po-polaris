@@ -19,6 +19,7 @@ import p5laris.character.domain.infrastructure.config.ShareRewardOutboxPropertie
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -28,6 +29,7 @@ public class CharacterOutboxRelayScheduler {
     private static final String CHARACTER_EVENT_LOG_TOPIC = "character-event-logs";
     private static final String NOTIFICATION_REQUEST_TOPIC = "notification-requests";
     private static final int BATCH_SIZE = 100;
+    private static final long KAFKA_SEND_TIMEOUT_SECONDS = 5;
 
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final ObjectMapper objectMapper;
@@ -111,22 +113,26 @@ public class CharacterOutboxRelayScheduler {
     private void publish(CharacterOutboxEvent outbox) throws Exception {
         if (CharacterEventLogEventListener.AGGREGATE_TYPE_CHARACTER_EVENT_LOG.equals(outbox.getAggregateType())) {
             CharacterEventLogEvent event = objectMapper.treeToValue(outbox.getPayload(), CharacterEventLogEvent.class);
-            kafkaTemplate.send(CHARACTER_EVENT_LOG_TOPIC, outbox.getIdempotencyKey(), event);
+            sendAndWait(CHARACTER_EVENT_LOG_TOPIC, outbox.getIdempotencyKey(), event);
             return;
         }
 
         if (ShareEventLogEventListener.AGGREGATE_TYPE_SHARE_EVENT_LOG.equals(outbox.getAggregateType())) {
             ShareEventLogEvent event = objectMapper.treeToValue(outbox.getPayload(), ShareEventLogEvent.class);
-            kafkaTemplate.send(CHARACTER_EVENT_LOG_TOPIC, outbox.getIdempotencyKey(), event);
+            sendAndWait(CHARACTER_EVENT_LOG_TOPIC, outbox.getIdempotencyKey(), event);
             return;
         }
 
         if (CharacterNotificationRequestPublisher.AGGREGATE_TYPE_NOTIFICATION_REQUEST.equals(outbox.getAggregateType())) {
             NotificationRequestEvent event = objectMapper.treeToValue(outbox.getPayload(), NotificationRequestEvent.class);
-            kafkaTemplate.send(NOTIFICATION_REQUEST_TOPIC, outbox.getIdempotencyKey(), event);
+            sendAndWait(NOTIFICATION_REQUEST_TOPIC, outbox.getIdempotencyKey(), event);
             return;
         }
 
         throw new IllegalStateException("Unsupported character outbox aggregateType: " + outbox.getAggregateType());
+    }
+
+    private void sendAndWait(String topic, String key, Object event) throws Exception {
+        kafkaTemplate.send(topic, key, event).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 }
