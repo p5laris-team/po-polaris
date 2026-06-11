@@ -5,7 +5,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(properties = {
         "internal.grpc-auth.enabled=true",
-        "internal.grpc-auth.token=test-internal-grpc-token"
+        "internal.grpc-auth.token=test-internal-grpc-token",
+        "spring.task.scheduling.enabled=false"
 })
 class NotificationApplicationTests {
 

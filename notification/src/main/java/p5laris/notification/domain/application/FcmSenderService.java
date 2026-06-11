@@ -4,21 +4,22 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
-import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import p5laris.notification.domain.application.event.NotificationDeliveryDecision;
 import p5laris.notification.domain.domain.entity.FcmDeviceToken;
+import p5laris.notification.domain.domain.entity.Notification;
 import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
 import p5laris.notification.domain.domain.enums.FcmTokenDeactivatedReason;
-import p5laris.notification.domain.domain.enums.NotificationType;
+import p5laris.notification.domain.domain.enums.PushDeliveryStatus;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
+import p5laris.notification.domain.domain.repository.NotificationRepository;
 import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
-import p5laris.notification.domain.domain.repository.NotificationSettingRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -26,78 +27,99 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FcmSenderService {
 
+    private static final int DUE_DELIVERY_BATCH_SIZE = 50;
+    private static final long DELIVERY_RESERVATION_SECONDS = 60L;
+    private static final long RETRY_DELAY_SECONDS = 60L;
+
+    private final NotificationRepository notificationRepository;
     private final FcmDeviceTokenRepository fcmDeviceTokenRepository;
-    private final NotificationSettingRepository notificationSettingRepository;
     private final NotificationPushDeliveryRepository notificationPushDeliveryRepository;
-    private final NotificationDeliveryPolicy notificationDeliveryPolicy;
 
     @Async
-    @Transactional
-    public void sendPushNotification(
-            Long notificationId,
-            Long userId,
-            String title,
-            String body,
-            NotificationType notificationType
-    ) {
-        // 수신 동의 여부 확인
-        p5laris.notification.domain.domain.entity.NotificationSetting setting = notificationSettingRepository.findByUserId(userId)
-                .orElseGet(() -> p5laris.notification.domain.domain.entity.NotificationSetting.defaultSetting(userId));
+    public void dispatchPendingDeliveries(Long notificationId) {
+        LocalDateTime now = LocalDateTime.now();
+        List<NotificationPushDelivery> dueDeliveries = notificationPushDeliveryRepository.findDueByNotificationId(
+                notificationId,
+                PushDeliveryStatus.PENDING,
+                now
+        );
 
-        NotificationDeliveryDecision decision = notificationDeliveryPolicy.decide(setting, notificationType);
-        if (!decision.sendable()) {
-            log.info("Push notification skipped. userId={}, notificationId={}, reason={}",
-                    userId, notificationId, decision.skipCode());
-            recordSkippedDelivery(notificationId, userId, decision.skipCode(), decision.skipMessage());
+        dueDeliveries.forEach(delivery -> dispatchDelivery(delivery.getId()));
+    }
+
+    @Scheduled(fixedDelayString = "${notification.push.retry-fixed-delay-ms:30000}")
+    public void dispatchDuePendingDeliveries() {
+        LocalDateTime now = LocalDateTime.now();
+        List<NotificationPushDelivery> dueDeliveries = notificationPushDeliveryRepository.findDue(
+                PushDeliveryStatus.PENDING,
+                now,
+                PageRequest.of(0, DUE_DELIVERY_BATCH_SIZE)
+        );
+
+        dueDeliveries.forEach(delivery -> dispatchDelivery(delivery.getId()));
+    }
+
+    private void dispatchDelivery(Long deliveryId) {
+        LocalDateTime attemptedAt = LocalDateTime.now();
+        int reserved = notificationPushDeliveryRepository.reservePendingDelivery(
+                deliveryId,
+                PushDeliveryStatus.PENDING,
+                attemptedAt,
+                attemptedAt.plusSeconds(DELIVERY_RESERVATION_SECONDS)
+        );
+        if (reserved == 0) {
             return;
         }
 
-        List<FcmDeviceToken> activeTokens = fcmDeviceTokenRepository.findByUserIdAndActiveTrue(userId);
-
-        if (activeTokens.isEmpty()) {
-            log.info("No active FCM tokens found for user: {}", userId);
-            recordSkippedDelivery(notificationId, userId, "NO_ACTIVE_TOKENS", "User has no active FCM tokens");
+        NotificationPushDelivery delivery = notificationPushDeliveryRepository.findById(deliveryId)
+                .orElse(null);
+        if (delivery == null) {
             return;
         }
 
-        for (FcmDeviceToken token : activeTokens) {
-            NotificationPushDelivery delivery = NotificationPushDelivery.builder()
-                    .notificationId(notificationId)
-                    .userId(userId)
-                    .fcmDeviceTokenId(token.getId())
-                    .build();
-            delivery.markAttempted();
+        Notification notification = notificationRepository.findById(delivery.getNotificationId())
+                .orElse(null);
+        if (notification == null) {
+            markRetryableFailure(delivery, "NOTIFICATION_NOT_FOUND", "Notification row is not found");
             notificationPushDeliveryRepository.save(delivery);
-
-            Message message = Message.builder()
-                    .setToken(token.getFcmToken())
-                    .setNotification(Notification.builder()
-                            .setTitle(title)
-                            .setBody(body)
-                            .build())
-                    .build();
-
-            try {
-                String response = FirebaseMessaging.getInstance().send(message);
-                log.info("Successfully sent message: {} to user: {} token: {}", response, userId, token.getId());
-                delivery.markSent(response);
-            } catch (FirebaseMessagingException e) {
-                log.warn("Failed to send message to user: {} token: {}", userId, token.getId(), e);
-                
-                String errorCode = resolveDeliveryErrorCode(e);
-                delivery.markFailed(errorCode, e.getMessage());
-
-                if (shouldDeactivateToken(e)) {
-                    log.info("Deactivating FCM token: {} due to errorCode: {}", token.getId(), errorCode);
-                    token.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
-                }
-            } catch (Exception e) {
-                log.error("Unexpected error sending FCM message to user: {}", userId, e);
-                delivery.markFailed("UNKNOWN", e.getMessage());
-            }
-
-            notificationPushDeliveryRepository.save(delivery);
+            return;
         }
+
+        if (delivery.getFcmDeviceTokenId() == null) {
+            delivery.markSkipped("NO_TARGET_TOKEN", "Delivery has no target FCM token");
+            notificationPushDeliveryRepository.save(delivery);
+            return;
+        }
+
+        FcmDeviceToken token = fcmDeviceTokenRepository.findById(delivery.getFcmDeviceTokenId())
+                .orElse(null);
+        if (token == null || !token.isActive()) {
+            delivery.markSkipped("TOKEN_INACTIVE", "FCM token is missing or inactive");
+            notificationPushDeliveryRepository.save(delivery);
+            return;
+        }
+
+        Message message = Message.builder()
+                .setToken(token.getFcmToken())
+                .setNotification(com.google.firebase.messaging.Notification.builder()
+                        .setTitle(notification.getTitle())
+                        .setBody(notification.getMessage())
+                        .build())
+                .build();
+
+        try {
+            String response = FirebaseMessaging.getInstance().send(message);
+            log.info("Successfully sent message: {} to user: {} token: {}",
+                    response, delivery.getUserId(), token.getId());
+            delivery.markSent(response);
+        } catch (FirebaseMessagingException e) {
+            handleFirebaseFailure(delivery, token, e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending FCM message to user: {}", delivery.getUserId(), e);
+            markRetryableFailure(delivery, "UNKNOWN", e.getMessage());
+        }
+
+        notificationPushDeliveryRepository.save(delivery);
     }
 
     static String resolveDeliveryErrorCode(FirebaseMessagingException e) {
@@ -119,13 +141,31 @@ public class FcmSenderService {
                 || messagingErrorCode == MessagingErrorCode.INVALID_ARGUMENT;
     }
 
-    private void recordSkippedDelivery(Long notificationId, Long userId, String errorCode, String errorMessage) {
-        NotificationPushDelivery delivery = NotificationPushDelivery.builder()
-                .notificationId(notificationId)
-                .userId(userId)
-                .fcmDeviceTokenId(null)
-                .build();
-        delivery.markSkipped(errorCode, errorMessage);
-        notificationPushDeliveryRepository.save(delivery);
+    private void handleFirebaseFailure(
+            NotificationPushDelivery delivery,
+            FcmDeviceToken token,
+            FirebaseMessagingException e
+    ) {
+        String errorCode = resolveDeliveryErrorCode(e);
+        log.warn("Failed to send message to user: {} token: {} errorCode: {}",
+                delivery.getUserId(), token.getId(), errorCode, e);
+
+        if (shouldDeactivateToken(e)) {
+            log.info("Deactivating FCM token: {} due to errorCode: {}", token.getId(), errorCode);
+            token.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
+            fcmDeviceTokenRepository.save(token);
+            delivery.markFailed(errorCode, e.getMessage());
+            return;
+        }
+
+        markRetryableFailure(delivery, errorCode, e.getMessage());
+    }
+
+    private void markRetryableFailure(NotificationPushDelivery delivery, String errorCode, String errorMessage) {
+        delivery.markRetryableFailure(
+                errorCode,
+                errorMessage,
+                LocalDateTime.now().plusSeconds(RETRY_DELAY_SECONDS)
+        );
     }
 }
