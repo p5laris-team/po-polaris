@@ -14,12 +14,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.notification.domain.application.event.NotificationDeliveryDecision;
 import p5laris.notification.domain.domain.entity.FcmDeviceToken;
 import p5laris.notification.domain.domain.entity.Notification;
+import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
 import p5laris.notification.domain.domain.entity.NotificationSetting;
 import p5laris.notification.domain.domain.enums.FcmPlatform;
 import p5laris.notification.domain.domain.enums.NotificationTargetType;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
+import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
 import p5laris.notification.domain.domain.repository.NotificationRepository;
 import p5laris.notification.domain.domain.repository.NotificationSettingRepository;
 import p5laris.notification.domain.exception.NotificationErrorCode;
@@ -34,6 +37,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -47,6 +51,8 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final FcmDeviceTokenRepository fcmDeviceTokenRepository;
     private final NotificationSettingRepository notificationSettingRepository;
+    private final NotificationPushDeliveryRepository notificationPushDeliveryRepository;
+    private final NotificationDeliveryPolicy notificationDeliveryPolicy;
 
     @Transactional(readOnly = true)
     public GetNotificationsResponse getNotifications(
@@ -209,10 +215,28 @@ public class NotificationService {
 
     @Transactional
     public Notification createNotification(com.p5laris.proto.notification.v1.SendPushNotificationRequest request) {
+        return createNotification(request, null);
+    }
+
+    @Transactional
+    public Notification createNotification(
+            com.p5laris.proto.notification.v1.SendPushNotificationRequest request,
+            String idempotencyKey
+    ) {
         validateUserId(request.getUserId());
+
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey != null) {
+            Optional<Notification> existingNotification =
+                    notificationRepository.findByIdempotencyKey(normalizedIdempotencyKey);
+            if (existingNotification.isPresent()) {
+                return existingNotification.get();
+            }
+        }
 
         Notification notification = Notification.builder()
                 .userId(request.getUserId())
+                .idempotencyKey(normalizedIdempotencyKey)
                 .title(request.getTitle())
                 .message(request.getBody())
                 .notificationType(toDomainNotificationType(request.getNotificationType()))
@@ -221,7 +245,55 @@ public class NotificationService {
                 .pushRequired(true) // 푸시 발송을 목적으로 호출되었으므로 true
                 .build();
 
-        return notificationRepository.save(notification);
+        Notification savedNotification = notificationRepository.save(notification);
+        createInitialPushDeliveries(savedNotification);
+        return savedNotification;
+    }
+
+    private void createInitialPushDeliveries(Notification notification) {
+        NotificationSetting setting = notificationSettingRepository.findByUserId(notification.getUserId())
+                .orElseGet(() -> NotificationSetting.defaultSetting(notification.getUserId()));
+
+        NotificationDeliveryDecision decision = notificationDeliveryPolicy.decide(
+                setting,
+                notification.getNotificationType()
+        );
+        if (!decision.sendable()) {
+            saveSkippedDelivery(notification, decision.skipCode(), decision.skipMessage());
+            return;
+        }
+
+        List<FcmDeviceToken> activeTokens = fcmDeviceTokenRepository.findByUserIdAndActiveTrue(notification.getUserId());
+        if (activeTokens.isEmpty()) {
+            saveSkippedDelivery(notification, "NO_ACTIVE_TOKENS", "User has no active FCM tokens");
+            return;
+        }
+
+        activeTokens.forEach(token -> notificationPushDeliveryRepository.save(
+                NotificationPushDelivery.builder()
+                        .notificationId(notification.getId())
+                        .userId(notification.getUserId())
+                        .fcmDeviceTokenId(token.getId())
+                        .build()
+        ));
+    }
+
+    private void saveSkippedDelivery(Notification notification, String errorCode, String errorMessage) {
+        NotificationPushDelivery delivery = NotificationPushDelivery.builder()
+                .notificationId(notification.getId())
+                .userId(notification.getUserId())
+                .fcmDeviceTokenId(null)
+                .build();
+        delivery.markSkipped(errorCode, errorMessage);
+        notificationPushDeliveryRepository.save(delivery);
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+
+        return idempotencyKey.trim();
     }
 
     private NotificationSettingSnapshot toSettingSnapshot(NotificationSetting setting) {

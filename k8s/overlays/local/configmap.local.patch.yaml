@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: p5laris-config
+  namespace: p5laris-lab
+data:
+  APP_PUBLIC_BASE_URL: "http://localhost:8080"
+
+  REDIS_HOST: "host.docker.internal"
+  REDIS_PORT: "6379"
+  REDIS_TIMEOUT: "2000"
+
+  AWS_REGION: "ap-northeast-2"
+
+  KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9096"

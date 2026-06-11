@@ -1,20 +1,19 @@
 package p5laris.user.domain.application.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.p5laris.proto.eventlog.v1.EventLogServiceGrpc;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.user.domain.domain.entity.OutboxEvent;
 import p5laris.user.domain.domain.repository.OutboxEventRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,7 +51,6 @@ class OutboxRelaySchedulerTest {
                 meterRegistry,
                 kafkaTemplate
         );
-        ReflectionTestUtils.setField(scheduler, "sourceService", "user");
         scheduler.init();
     }
 
@@ -89,6 +87,8 @@ class OutboxRelaySchedulerTest {
 
         when(outboxEventRepository.findPendingEvents(any(), any())).thenReturn(List.of(event));
         when(outboxEventRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(event));
+        when(kafkaTemplate.send(eq("user-event-logs"), eq("idemp-user-1"), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         // When: 아웃박스 릴레이 스케줄러 실행
         scheduler.relayEvents();
@@ -106,6 +106,31 @@ class OutboxRelaySchedulerTest {
         assertThat(counter.count()).isEqualTo(1.0);
         assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
         assertThat(counter.getId().getTag("aggregate_type")).isEqualTo("USER_EVENT_LOG");
+    }
+
+    @Test
+    void relayEvents_kafka_send_failure_marks_event_retryable() {
+        OutboxEvent event = OutboxEvent.builder()
+                .id(10L)
+                .aggregateType("USER_EVENT_LOG")
+                .aggregateId(200L)
+                .eventType("USER_LOGGED_IN")
+                .payload("{\"eventType\":\"USER_LOGGED_IN\",\"userId\":1,\"refType\":\"USER\",\"refId\":1,\"metadata\":{},\"occurredAt\":\"2026-06-02T14:15:00+09:00\"}")
+                .idempotencyKey("idemp-user-1")
+                .status("PENDING")
+                .nextAttemptAt(LocalDateTime.now().minusMinutes(1))
+                .build();
+
+        when(outboxEventRepository.findPendingEvents(any(), any())).thenReturn(List.of(event));
+        when(outboxEventRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(event));
+        when(kafkaTemplate.send(eq("user-event-logs"), eq("idemp-user-1"), any()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
+
+        scheduler.relayEvents();
+
+        assertThat(event.getStatus()).isEqualTo("PENDING");
+        assertThat(event.getAttemptCount()).isEqualTo(1);
+        assertThat(event.getLastErrorMessage()).contains("broker unavailable");
     }
 
     /**

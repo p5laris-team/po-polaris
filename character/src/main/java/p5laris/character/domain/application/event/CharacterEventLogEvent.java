@@ -1,5 +1,6 @@
 package p5laris.character.domain.application.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -138,6 +139,7 @@ public record CharacterEventLogEvent(
         );
     }
 
+    @JsonIgnore
     public String getPropertiesJson() {
         try {
             return objectMapper.writeValueAsString(properties);

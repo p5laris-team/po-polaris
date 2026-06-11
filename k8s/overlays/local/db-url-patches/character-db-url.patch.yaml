@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5laris-character
+spec:
+  template:
+    spec:
+      containers:
+        - name: character
+          env:
+            - name: DB_URL
+              value: "jdbc:postgresql://host.docker.internal:5432/character"

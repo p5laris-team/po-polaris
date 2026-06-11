@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5laris-event-log
+spec:
+  template:
+    spec:
+      containers:
+        - name: event-log
+          env:
+            - name: DB_URL
+              value: "jdbc:postgresql://host.docker.internal:5432/event_log"

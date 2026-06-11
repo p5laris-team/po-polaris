@@ -16,6 +16,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     // 알림 ID만으로 찾지 않고 userId를 함께 확인해 다른 유저의 알림 읽음 처리를 막는다.
     Optional<Notification> findByIdAndUserId(Long id, Long userId);
 
+    Optional<Notification> findByIdempotencyKey(String idempotencyKey);
+
     // cursor가 없고 read 필터도 없을 때 최신 알림 목록을 조회한다.
     List<Notification> findByUserIdOrderByIdDesc(Long userId, Pageable pageable);
 

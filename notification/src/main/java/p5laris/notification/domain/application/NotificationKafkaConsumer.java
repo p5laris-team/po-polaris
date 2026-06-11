@@ -76,17 +76,11 @@ public class NotificationKafkaConsumer {
 
             SendPushNotificationRequest protoRequest = requestBuilder.build();
 
-            // 3. DB에 알림 이력 생성 및 저장 (동기)
-            Notification notification = notificationService.createNotification(protoRequest);
+            // 3. DB에 알림 이력과 FCM 발송 대기 이력을 같은 트랜잭션으로 생성한다.
+            Notification notification = notificationService.createNotification(protoRequest, idempotencyKey);
 
-            // 4. FCM 실제 푸시 발송 비동기 트리거
-            fcmSenderService.sendPushNotification(
-                    notification.getId(),
-                    protoRequest.getUserId(),
-                    protoRequest.getTitle(),
-                    protoRequest.getBody(),
-                    notification.getNotificationType()
-            );
+            // 4. 이미 처리된 중복 메시지는 발송할 PENDING delivery가 없으므로 no-op이 된다.
+            fcmSenderService.dispatchPendingDeliveries(notification.getId());
 
             log.info("[Kafka] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
         } catch (Exception e) {

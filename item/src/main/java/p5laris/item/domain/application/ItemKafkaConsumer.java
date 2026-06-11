@@ -15,6 +15,8 @@ import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 
+import java.time.LocalDateTime;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -30,6 +32,9 @@ import p5laris.item.domain.domain.repository.UserItemRepository;
  *    - PENDING 상태의 구매 건을 FAILED(실패) 상태로 마킹하여 트랜잭션을 중단(롤백)합니다.
  */
 public class ItemKafkaConsumer {
+
+    private static final String SYSTEM_ERROR = "SYSTEM_ERROR";
+    private static final long SYSTEM_ERROR_RETRY_DELAY_MINUTES = 1;
 
     private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final UserItemRepository userItemRepository;
@@ -125,9 +130,17 @@ public class ItemKafkaConsumer {
 
             // 2. 구매 건의 현재 상태가 PENDING인 경우에만 실패 상태로 전환
             if ("PENDING".equals(p.getStatus())) {
-                p.updateStatus("FAILED"); // 상태 실패 전환
+                if (SYSTEM_ERROR.equals(event.getErrorCode())) {
+                    p.updateStatusWithRetry(
+                            "UNKNOWN",
+                            LocalDateTime.now().plusMinutes(SYSTEM_ERROR_RETRY_DELAY_MINUTES)
+                    );
+                    log.warn("[Kafka] 시스템 오류 실패 이벤트 수신. 구매 복구 대상으로 전환 - 구매 ID: {}", p.getId());
+                } else {
+                    p.updateStatus("FAILED"); // 상태 실패 전환
+                    log.info("[Kafka] 구매 실패(FAILED) 마킹 완료 - 구매 ID: {}", p.getId());
+                }
                 userItemPurchaseRepository.save(p);
-                log.info("[Kafka] 구매 실패(FAILED) 마킹 완료 - 구매 ID: {}", p.getId());
             } else {
                 log.info("[Kafka] 이미 처리 완료된 구매 건입니다. 상태: {}, 구매 ID: {}", p.getStatus(), p.getId());
             }

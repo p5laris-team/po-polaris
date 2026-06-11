@@ -1,25 +1,22 @@
 package p5laris.item.domain.application.event;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.item.domain.domain.entity.OutboxEvent;
 import p5laris.item.domain.domain.repository.OutboxEventRepository;
-import io.micrometer.core.instrument.MeterRegistry;
-import jakarta.annotation.PostConstruct;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
@@ -39,11 +36,9 @@ public class ItemOutboxRelayScheduler {
                 repo -> repo.countByStatus("PENDING"));
     }
 
-    @Value("${spring.application.name:item}")
-    private String sourceService;
-
     private static final int BATCH_SIZE = 100;
     private static final int MAX_ATTEMPTS = 5;
+    private static final long KAFKA_SEND_TIMEOUT_SECONDS = 5;
 
     /**
      * 주기적으로 (5초 간격) DB의 아웃박스 테이블에서 전송 대기 상태(PENDING)인 이벤트를 조회하여
@@ -90,7 +85,7 @@ public class ItemOutboxRelayScheduler {
                     ItemEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), ItemEventLogEvent.class);
                     
                     // [Kafka 도입] gRPC 동기 호출 대신 Kafka 토픽 발행으로 전격 비동기화
-                    kafkaTemplate.send("item-event-logs", outboxEvent.getIdempotencyKey(), event);
+                    sendAndWait("item-event-logs", outboxEvent.getIdempotencyKey(), event);
                 }
                 
                 // 전송 성공 처리
@@ -117,6 +112,25 @@ public class ItemOutboxRelayScheduler {
                         "aggregate_type", pendingEvent.getAggregateType()
                 ).increment();
             }
+        }
+    }
+
+    private void sendAndWait(String topic, String key, Object event) throws Exception {
+        try {
+            kafkaTemplate.send(topic, key, event).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for Kafka send ack", e);
+        } catch (TimeoutException e) {
+            throw new IllegalStateException(
+                    "Timed out waiting for Kafka send ack after " + KAFKA_SEND_TIMEOUT_SECONDS + " seconds", e
+            );
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String detail = cause.getMessage() != null && !cause.getMessage().isBlank()
+                    ? cause.getMessage()
+                    : cause.getClass().getSimpleName();
+            throw new IllegalStateException("Kafka send failed: " + detail, cause);
         }
     }
 

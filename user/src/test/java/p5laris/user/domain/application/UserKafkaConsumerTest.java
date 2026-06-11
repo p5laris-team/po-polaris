@@ -9,15 +9,21 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import p5laris.user.domain.application.event.ItemPurchaseRequestedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnFailedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnedEvent;
+import p5laris.user.domain.application.event.StarPieceSpendFailedEvent;
 import p5laris.user.domain.domain.entity.StarPieceTransaction;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -107,5 +113,48 @@ class UserKafkaConsumerTest {
         assertThat(event.getRefType()).isEqualTo("SHARE");
         assertThat(event.getRefId()).isEqualTo(200L);
         assertThat(event.getErrorCode()).isEqualTo("USER-003");
+    }
+
+    @Test
+    @DisplayName("아이템 구매 차감 중 시스템 예외가 발생하면 실패 이벤트로 확정하지 않고 예외를 전파한다")
+    void handleItemPurchaseRequest_systemException_rethrows() throws Exception {
+        ItemPurchaseRequestedEvent request = ItemPurchaseRequestedEvent.builder()
+                .purchaseId(30L)
+                .userId(3L)
+                .itemId(300L)
+                .price(100)
+                .idempotencyKey("ITEM_PURCHASE:30")
+                .build();
+        when(walletService.spendStarPiece(3L, 100, "ITEM_PURCHASE", "ITEM", 300L, "ITEM_PURCHASE:30"))
+                .thenThrow(new RuntimeException("database timeout"));
+
+        assertThatThrownBy(() -> userKafkaConsumer.handleItemPurchaseRequest(objectMapper.writeValueAsString(request)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Failed to process item purchase request");
+
+        verify(kafkaTemplate, never()).send(eq("star-piece-spend-failed"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("아이템 구매 차감 중 잔액 부족은 구매 실패 이벤트를 발행한다")
+    void handleItemPurchaseRequest_notEnoughStarPiece_publishesFailedEvent() throws Exception {
+        ItemPurchaseRequestedEvent request = ItemPurchaseRequestedEvent.builder()
+                .purchaseId(40L)
+                .userId(4L)
+                .itemId(400L)
+                .price(100)
+                .idempotencyKey("ITEM_PURCHASE:40")
+                .build();
+        when(walletService.spendStarPiece(4L, 100, "ITEM_PURCHASE", "ITEM", 400L, "ITEM_PURCHASE:40"))
+                .thenThrow(new UserException(UserErrorCode.STAR_PIECE_NOT_ENOUGH));
+
+        userKafkaConsumer.handleItemPurchaseRequest(objectMapper.writeValueAsString(request));
+
+        ArgumentCaptor<StarPieceSpendFailedEvent> eventCaptor = ArgumentCaptor.forClass(StarPieceSpendFailedEvent.class);
+        verify(kafkaTemplate).send(eq("star-piece-spend-failed"), eq("ITEM_PURCHASE:40"), eventCaptor.capture());
+
+        StarPieceSpendFailedEvent event = eventCaptor.getValue();
+        assertThat(event.getPurchaseId()).isEqualTo(40L);
+        assertThat(event.getErrorCode()).isEqualTo("STAR_PIECE_NOT_ENOUGH");
     }
 }

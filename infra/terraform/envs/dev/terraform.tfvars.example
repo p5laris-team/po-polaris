@@ -1,0 +1,5 @@
+aws_region  = "ap-northeast-2"
+aws_profile = "p5laris-ecr"
+
+project     = "p5laris"
+environment = "dev"

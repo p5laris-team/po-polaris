@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5laris-ai
+  labels:
+    app: p5laris-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: p5laris-ai
+  template:
+    metadata:
+      labels:
+        app: p5laris-ai
+    spec:
+      containers:
+        - name: ai
+          image: p5laris-ai:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 9095
+          env:
+            - name: GRPC_SERVER_PORT
+              value: "9095"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xms64m -Xmx256m -XX:+UseSerialGC -XX:ActiveProcessorCount=1 -XX:MaxDirectMemorySize=96m"
+          envFrom:
+            - configMapRef:
+                name: p5laris-config
+            - secretRef:
+                name: p5laris-secret
+                optional: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 160Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 9095
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 9095
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
