@@ -15,6 +15,7 @@ import p5laris.user.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnedEvent;
 import p5laris.user.domain.application.event.StarPieceSpendFailedEvent;
 import p5laris.user.domain.domain.entity.StarPieceTransaction;
+import p5laris.user.domain.exception.KafkaConsumerProcessingException;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
@@ -129,7 +130,7 @@ class UserKafkaConsumerTest {
                 .thenThrow(new RuntimeException("database timeout"));
 
         assertThatThrownBy(() -> userKafkaConsumer.handleItemPurchaseRequest(objectMapper.writeValueAsString(request)))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(KafkaConsumerProcessingException.class)
                 .hasMessageContaining("아이템 구매 요청 처리에 실패했습니다.");
 
         verify(kafkaTemplate, never()).send(eq("star-piece-spend-failed"), anyString(), any());

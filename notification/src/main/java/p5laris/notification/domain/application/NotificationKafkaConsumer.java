@@ -12,6 +12,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import p5laris.notification.domain.application.event.NotificationRequestEvent;
 import p5laris.notification.domain.domain.entity.Notification;
+import p5laris.notification.domain.exception.KafkaConsumerProcessingException;
 
 /**
  * Notification 모듈의 Kafka 메시지 컨슈머 클래스입니다.
@@ -49,7 +50,7 @@ public class NotificationKafkaConsumer {
             event = objectMapper.readValue(messagePayload, NotificationRequestEvent.class);
         } catch (Exception e) {
             log.error("[Kafka] 알림 발송 요청 메시지 역직렬화(JSON 파싱) 실패 - 멱등키: {}", idempotencyKey, e);
-            throw new IllegalArgumentException("알림 요청 메시지 역직렬화에 실패했습니다.", e);
+            throw new KafkaConsumerProcessingException("알림 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 알림 발송 요청 수신 - 사용자: {}, 제목: {}, 타입: {}, 멱등키: {}", 
@@ -85,7 +86,7 @@ public class NotificationKafkaConsumer {
             log.info("[Kafka] 알림 푸시 발송 및 DB 기록 위임 성공 - 알림 ID: {}", notification.getId());
         } catch (Exception e) {
             log.error("[Kafka] 알림 발송 처리 중 예외 발생 - 멱등키: {}", idempotencyKey, e);
-            throw new IllegalStateException("알림 요청 처리에 실패했습니다.", e);
+            throw new KafkaConsumerProcessingException("알림 요청 처리에 실패했습니다.", e);
         }
     }
 

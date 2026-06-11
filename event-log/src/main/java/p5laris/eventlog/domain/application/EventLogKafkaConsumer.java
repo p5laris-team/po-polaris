@@ -8,6 +8,7 @@ import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import p5laris.eventlog.domain.domain.dto.EventLogRequest;
+import p5laris.eventlog.domain.exception.KafkaConsumerProcessingException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -79,7 +80,7 @@ public class EventLogKafkaConsumer {
             log.info("[Kafka Consumer] 이벤트 로그 적재 완료 - key={}", idempotencyKey);
         } catch (Exception e) {
             log.error("[Kafka Consumer] 이벤트 로그 처리 실패 - topic={}, key={}", topic, idempotencyKey, e);
-            throw new IllegalStateException("이벤트 로그 메시지 처리에 실패했습니다.", e);
+            throw new KafkaConsumerProcessingException("이벤트 로그 메시지 처리에 실패했습니다.", e);
         }
     }
 
