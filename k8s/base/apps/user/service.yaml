@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  labels:
+    app: p5laris-user
+spec:
+  type: ClusterIP
+  selector:
+    app: p5laris-user
+  ports:
+    - name: grpc
+      port: 9091
+      targetPort: 9091
+    - name: http
+      port: 8080
+      targetPort: 8080

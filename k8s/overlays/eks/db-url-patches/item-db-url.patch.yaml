@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5laris-item
+spec:
+  template:
+    spec:
+      containers:
+        - name: item
+          env:
+            - name: DB_URL
+              value: "jdbc:postgresql://p5laris-dev-postgres.cre8ica4cs2x.ap-northeast-2.rds.amazonaws.com:5432/item"

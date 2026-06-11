@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5laris-ai
+spec:
+  template:
+    spec:
+      containers:
+        - name: ai
+          env:
+            - name: DB_URL
+              value: "jdbc:postgresql://host.docker.internal:5432/ai"

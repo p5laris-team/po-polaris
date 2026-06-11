@@ -1,0 +1,70 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - kafka-topics-job.yaml
+  - secret.eks.yaml
+  - ../../base
+  - ingress-alb.yaml
+
+patches:
+  - path: probe-patches/user-probe.patch.yaml
+  - path: configmap.eks.patch.yaml
+  - path: db-url-patches/user-db-url.patch.yaml
+  - path: db-url-patches/character-db-url.patch.yaml
+  - path: db-url-patches/item-db-url.patch.yaml
+  - path: db-url-patches/mission-db-url.patch.yaml
+  - path: db-url-patches/event-log-db-url.patch.yaml
+  - path: db-url-patches/ai-db-url.patch.yaml
+  - path: db-url-patches/notification-db-url.patch.yaml
+
+images:
+  - name: p5laris-gateway
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-gateway
+    newTag: eks-arm64-gateway-2f1af6e-202606102217
+
+  - name: p5laris-user
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-user
+    newTag: eks-arm64-user-be44073-202606082022
+
+  - name: p5laris-character
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-character
+    newTag: eks-arm64-character-2f1af6e-202606102027
+
+  - name: p5laris-item
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-item
+    newTag: eks-arm64-item-2f1af6e-202606102034
+
+  - name: p5laris-mission
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-mission
+    newTag: eks-arm64-mission-2f1af6e-202606102044
+
+  - name: p5laris-event-log
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-event-log
+    newTag: eks-arm64-event-log-2f1af6e-202606102130
+
+  - name: p5laris-ai
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-ai
+    newTag: eks-arm64-ai-2f1af6e-202606102207
+
+  - name: p5laris-notification
+    newName: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com/p5laris-notification
+    newTag: eks-arm64-notification-2f1af6e-202606102158
+
+replicas:
+  - name: p5laris-user
+    count: 1
+  - name: p5laris-character
+    count: 1
+  - name: p5laris-item
+    count: 1
+  - name: p5laris-mission
+    count: 1
+  - name: p5laris-event-log
+    count: 1
+  - name: p5laris-ai
+    count: 1
+  - name: p5laris-notification
+    count: 1
+  - name: p5laris-gateway
+    count: 2

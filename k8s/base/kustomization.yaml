@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: p5laris-lab
+
+resources:
+  - common
+
+  - apps/gateway
+  - apps/user
+  - apps/character
+  - apps/item
+  - apps/mission
+  - apps/event-log
+  - apps/ai
+  - apps/notification
