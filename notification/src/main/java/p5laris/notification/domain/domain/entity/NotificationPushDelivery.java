@@ -52,6 +52,12 @@ public class NotificationPushDelivery extends BaseEntity {
     @Column(name = "attempted_at")
     private LocalDateTime attemptedAt;
 
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
 
@@ -68,16 +74,25 @@ public class NotificationPushDelivery extends BaseEntity {
         this.userId = userId;
         this.fcmDeviceTokenId = fcmDeviceTokenId;
         this.deliveryStatus = PushDeliveryStatus.PENDING;
+        this.nextAttemptAt = LocalDateTime.now();
+        this.attemptCount = 0;
     }
 
     public void markAttempted() {
-        this.attemptedAt = LocalDateTime.now();
+        markAttempted(LocalDateTime.now(), LocalDateTime.now());
+    }
+
+    public void markAttempted(LocalDateTime attemptedAt, LocalDateTime nextAttemptAt) {
+        this.attemptedAt = attemptedAt;
+        this.nextAttemptAt = nextAttemptAt;
+        this.attemptCount++;
     }
 
     public void markSent(String fcmMessageId) {
         this.deliveryStatus = PushDeliveryStatus.SENT;
         this.fcmMessageId = fcmMessageId;
         this.sentAt = LocalDateTime.now();
+        this.nextAttemptAt = null;
         this.failedAt = null;
         this.errorCode = null;
         this.errorMessage = null;
@@ -88,11 +103,21 @@ public class NotificationPushDelivery extends BaseEntity {
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
         this.failedAt = LocalDateTime.now();
+        this.nextAttemptAt = null;
+    }
+
+    public void markRetryableFailure(String errorCode, String errorMessage, LocalDateTime nextAttemptAt) {
+        this.deliveryStatus = PushDeliveryStatus.PENDING;
+        this.errorCode = errorCode;
+        this.errorMessage = errorMessage;
+        this.failedAt = LocalDateTime.now();
+        this.nextAttemptAt = nextAttemptAt;
     }
 
     public void markSkipped(String errorCode, String errorMessage) {
         this.deliveryStatus = PushDeliveryStatus.SKIPPED;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
+        this.nextAttemptAt = null;
     }
 }
