@@ -127,10 +127,13 @@ class ItemOutboxRelaySchedulerTest {
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
 
         scheduler.processOutboxEvents();
+        LocalDateTime now = LocalDateTime.now();
 
         assertThat(event.getStatus()).isEqualTo("PENDING");
         assertThat(event.getAttemptCount()).isEqualTo(1);
         assertThat(event.getLastErrorMessage()).contains("broker unavailable");
+        assertThat(event.getNextAttemptAt()).isAfter(now);
+        verify(outboxEventRepository, atLeastOnce()).saveAndFlush(event);
     }
 
     /**

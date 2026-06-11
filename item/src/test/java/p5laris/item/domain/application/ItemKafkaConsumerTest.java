@@ -15,6 +15,7 @@ import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,11 +69,14 @@ class ItemKafkaConsumerTest {
                 .errorCode("SYSTEM_ERROR")
                 .build();
 
+        LocalDateTime before = LocalDateTime.now();
         itemKafkaConsumer.handleStarPieceSpendFailed(objectMapper.writeValueAsString(event));
+        LocalDateTime after = LocalDateTime.now();
 
         assertThat(purchase.getStatus()).isEqualTo("UNKNOWN");
         assertThat(purchase.getAttemptCount()).isEqualTo(1);
-        assertThat(purchase.getNextAttemptAt()).isNotNull();
+        assertThat(purchase.getNextAttemptAt())
+                .isBetween(before.plusSeconds(50), after.plusSeconds(70));
         verify(userItemPurchaseRepository).save(purchase);
     }
 

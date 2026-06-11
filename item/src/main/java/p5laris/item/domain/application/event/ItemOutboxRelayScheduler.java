@@ -14,7 +14,9 @@ import p5laris.item.domain.domain.repository.OutboxEventRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
@@ -114,7 +116,22 @@ public class ItemOutboxRelayScheduler {
     }
 
     private void sendAndWait(String topic, String key, Object event) throws Exception {
-        kafkaTemplate.send(topic, key, event).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        try {
+            kafkaTemplate.send(topic, key, event).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for Kafka send ack", e);
+        } catch (TimeoutException e) {
+            throw new IllegalStateException(
+                    "Timed out waiting for Kafka send ack after " + KAFKA_SEND_TIMEOUT_SECONDS + " seconds", e
+            );
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String detail = cause.getMessage() != null && !cause.getMessage().isBlank()
+                    ? cause.getMessage()
+                    : cause.getClass().getSimpleName();
+            throw new IllegalStateException("Kafka send failed: " + detail, cause);
+        }
     }
 
     /**
