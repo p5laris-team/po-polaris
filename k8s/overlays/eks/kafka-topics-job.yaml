@@ -26,14 +26,36 @@ spec:
               KAFKA_TOPICS="/opt/kafka/bin/kafka-topics.sh"
 
               for topic in \
-                star-piece-earned \
-                star-piece-earn-failed \
+                item-purchase-requested \
+                item-purchase-requested.DLT \
                 star-piece-spent \
+                star-piece-spent.DLT \
                 star-piece-spend-failed \
+                star-piece-spend-failed.DLT \
+                star-piece-earn-requested \
+                star-piece-earn-requested.DLT \
+                star-piece-earned \
+                star-piece-earned.DLT \
+                star-piece-earn-failed \
+                star-piece-earn-failed.DLT \
                 mission-character-exp-requested \
+                mission-character-exp-requested.DLT \
                 mission-character-exp-granted \
+                mission-character-exp-granted.DLT \
                 mission-character-exp-failed \
-                notification-requests
+                mission-character-exp-failed.DLT \
+                notification-requests \
+                notification-requests.DLT \
+                user-event-logs \
+                user-event-logs.DLT \
+                item-event-logs \
+                item-event-logs.DLT \
+                character-event-logs \
+                character-event-logs.DLT \
+                mission-event-logs \
+                mission-event-logs.DLT \
+                ai-event-logs \
+                ai-event-logs.DLT
               do
                 echo "== ensure topic: ${topic} =="
 

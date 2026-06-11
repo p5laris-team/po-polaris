@@ -7,6 +7,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import p5laris.mission.domain.application.event.MissionCharacterExpFailedEvent;
 import p5laris.mission.domain.application.event.MissionCharacterExpGrantedEvent;
+import p5laris.mission.domain.exception.KafkaConsumerProcessingException;
 import p5laris.mission.domain.exception.MissionException;
 
 @Slf4j
@@ -23,8 +24,9 @@ public class MissionCharacterExpKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, MissionCharacterExpGrantedEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 미션 캐릭터 경험치 성공 메시지 역직렬화 실패. payload={}", messagePayload, e);
-            return;
+            log.error("[Kafka] 미션 캐릭터 경험치 성공 메시지 역직렬화 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("미션 캐릭터 경험치 지급 완료 메시지 역직렬화에 실패했습니다.", e);
         }
 
         try {
@@ -43,8 +45,9 @@ public class MissionCharacterExpKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, MissionCharacterExpFailedEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 미션 캐릭터 경험치 실패 메시지 역직렬화 실패. payload={}", messagePayload, e);
-            return;
+            log.error("[Kafka] 미션 캐릭터 경험치 실패 메시지 역직렬화 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("미션 캐릭터 경험치 지급 실패 메시지 역직렬화에 실패했습니다.", e);
         }
 
         try {

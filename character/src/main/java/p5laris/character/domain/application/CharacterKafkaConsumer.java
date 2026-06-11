@@ -11,6 +11,7 @@ import p5laris.character.domain.application.event.MissionCharacterExpFailedEvent
 import p5laris.character.domain.application.event.MissionCharacterExpGrantedEvent;
 import p5laris.character.domain.application.event.MissionCharacterExpRequestedEvent;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.exception.KafkaConsumerProcessingException;
 
 @Slf4j
 @Component
@@ -31,8 +32,9 @@ public class CharacterKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, MissionCharacterExpRequestedEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 미션 캐릭터 경험치 요청 메시지 역직렬화 실패. payload={}", messagePayload, e);
-            return;
+            log.error("[Kafka] 미션 캐릭터 경험치 요청 메시지 역직렬화 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("미션 캐릭터 경험치 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 미션 캐릭터 경험치 요청 수신. missionId={}, characterId={}, outboxId={}",

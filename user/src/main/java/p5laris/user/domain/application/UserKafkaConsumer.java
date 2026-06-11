@@ -13,6 +13,7 @@ import p5laris.user.domain.application.event.StarPieceEarnedEvent;
 import p5laris.user.domain.application.event.StarPieceSpentEvent;
 import p5laris.user.domain.application.event.StarPieceSpendFailedEvent;
 import p5laris.user.domain.domain.entity.StarPieceTransaction;
+import p5laris.user.domain.exception.KafkaConsumerProcessingException;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
@@ -53,8 +54,9 @@ public class UserKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, ItemPurchaseRequestedEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 구매 요청 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
-            return; // 파싱 실패 시 처리 중단
+            log.error("[Kafka] 구매 요청 메시지 역직렬화(JSON 파싱) 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("아이템 구매 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 구매 요청 수신 - 구매 ID: {}, 사용자 ID: {}, 가격: {}",
@@ -110,7 +112,7 @@ public class UserKafkaConsumer {
         } catch (Exception e) {
             // 3-2. 시스템 인프라 예외 등 예기치 못한 예외 발생 시
             log.error("[Kafka] 재화 차감 처리 중 시스템 오류 발생. Kafka 재처리를 위해 예외를 전파합니다.", e);
-            throw new IllegalStateException("Failed to process item purchase request", e);
+            throw new KafkaConsumerProcessingException("아이템 구매 요청 처리에 실패했습니다.", e);
         }
     }
 
@@ -128,7 +130,7 @@ public class UserKafkaConsumer {
         } catch (Exception e) {
             log.error("[Kafka] 별조각 적립 요청 메시지 역직렬화 실패. payloadLength={}",
                     messagePayload != null ? messagePayload.length() : 0, e);
-            return;
+            throw new KafkaConsumerProcessingException("별조각 적립 요청 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 별조각 적립 요청 수신. reason={}, refType={}, refId={}, outboxId={}",

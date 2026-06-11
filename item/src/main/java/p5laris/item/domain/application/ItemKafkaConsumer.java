@@ -14,6 +14,7 @@ import p5laris.item.domain.domain.entity.UserItem;
 import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
+import p5laris.item.domain.exception.KafkaConsumerProcessingException;
 
 import java.time.LocalDateTime;
 
@@ -56,8 +57,9 @@ public class ItemKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, StarPieceSpentEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 재화 차감 완료 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
-            return; // 파싱 에러 발생 시 리턴하여 후속 로직 예방
+            log.error("[Kafka] 재화 차감 완료 메시지 역직렬화(JSON 파싱) 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("별조각 차감 완료 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 재화 차감 완료 수신 - 구매 ID: {}, 잔여 재화: {}, 트랜잭션 ID: {}",
@@ -113,8 +115,9 @@ public class ItemKafkaConsumer {
         try {
             event = objectMapper.readValue(messagePayload, StarPieceSpendFailedEvent.class);
         } catch (Exception e) {
-            log.error("[Kafka] 재화 차감 실패 메시지 역직렬화(JSON 파싱) 실패 - Payload: {}", messagePayload, e);
-            return; // 파싱 에러 발생 시 리턴
+            log.error("[Kafka] 재화 차감 실패 메시지 역직렬화(JSON 파싱) 실패. payloadLength={}",
+                    messagePayload != null ? messagePayload.length() : 0, e);
+            throw new KafkaConsumerProcessingException("별조각 차감 실패 메시지 역직렬화에 실패했습니다.", e);
         }
 
         log.info("[Kafka] 재화 차감 실패 수신 - 구매 ID: {}, 실패 코드: {}",
