@@ -80,7 +80,7 @@ public class FcmSenderService {
         Notification notification = notificationRepository.findById(delivery.getNotificationId())
                 .orElse(null);
         if (notification == null) {
-            markRetryableFailure(delivery, "NOTIFICATION_NOT_FOUND", "Notification row is not found");
+            delivery.markFailed("NOTIFICATION_NOT_FOUND", "Notification row is not found");
             notificationPushDeliveryRepository.save(delivery);
             return;
         }
