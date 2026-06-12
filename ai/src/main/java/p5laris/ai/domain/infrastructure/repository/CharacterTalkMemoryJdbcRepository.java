@@ -3,12 +3,14 @@ package p5laris.ai.domain.infrastructure.repository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import p5laris.ai.domain.application.memory.CharacterTalkDiarySummary;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
 import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.enums.CharacterTalkMemoryType;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -27,7 +29,8 @@ public class CharacterTalkMemoryJdbcRepository {
             Long userId,
             Long characterId,
             Long sourceSessionId,
-            String summary,
+            String contextSummary,
+            String diaryText,
             String model,
             int dimension,
             List<Float> normalizedVector
@@ -39,16 +42,18 @@ public class CharacterTalkMemoryJdbcRepository {
                             source_session_id,
                             memory_type,
                             summary,
+                            diary_text,
                             embedding_model,
                             embedding_dimension,
                             embedding,
                             created_at,
                             updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         ON CONFLICT (source_session_id, memory_type)
                         DO UPDATE SET
                             summary = EXCLUDED.summary,
+                            diary_text = EXCLUDED.diary_text,
                             embedding_model = EXCLUDED.embedding_model,
                             embedding_dimension = EXCLUDED.embedding_dimension,
                             embedding = EXCLUDED.embedding,
@@ -58,7 +63,8 @@ public class CharacterTalkMemoryJdbcRepository {
                 characterId,
                 sourceSessionId,
                 CharacterTalkMemoryType.SESSION_SUMMARY.name(),
-                summary,
+                contextSummary,
+                diaryText,
                 model,
                 dimension,
                 EmbeddingVectorUtils.toPgVectorLiteral(normalizedVector)
@@ -113,11 +119,53 @@ public class CharacterTalkMemoryJdbcRepository {
         return hits;
     }
 
+    public List<CharacterTalkDiarySummary> findDiarySummaries(
+            Long userId,
+            Long characterId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        LocalDateTime startAt = fromDate.atStartOfDay();
+        LocalDateTime endAt = toDate.plusDays(1).atStartOfDay();
+        return jdbcTemplate.query("""
+                        SELECT
+                            CAST(session.started_at AS date) AS diary_date,
+                            COALESCE(NULLIF(memory.diary_text, ''), memory.summary) AS summary,
+                            memory.source_session_id,
+                            memory.created_at
+                        FROM character_talk_memories memory
+                        JOIN character_talk_sessions session
+                          ON session.id = memory.source_session_id
+                        WHERE memory.user_id = ?
+                          AND memory.character_id = ?
+                          AND memory.memory_type = ?
+                          AND session.started_at >= ?
+                          AND session.started_at < ?
+                        ORDER BY session.started_at DESC, memory.created_at DESC
+                        """,
+                (rs, rowNum) -> toDiarySummary(rs),
+                userId,
+                characterId,
+                CharacterTalkMemoryType.SESSION_SUMMARY.name(),
+                startAt,
+                endAt
+        );
+    }
+
     private CharacterTalkMemoryHit toHit(ResultSet rs) throws SQLException {
         return new CharacterTalkMemoryHit(
                 rs.getLong("id"),
                 rs.getString("summary"),
                 rs.getDouble("distance"),
+                rs.getTimestamp("created_at").toLocalDateTime()
+        );
+    }
+
+    private CharacterTalkDiarySummary toDiarySummary(ResultSet rs) throws SQLException {
+        return new CharacterTalkDiarySummary(
+                rs.getDate("diary_date").toLocalDate(),
+                rs.getString("summary"),
+                rs.getLong("source_session_id"),
                 rs.getTimestamp("created_at").toLocalDateTime()
         );
     }

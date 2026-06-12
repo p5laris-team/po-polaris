@@ -68,6 +68,7 @@ import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient.CharacterProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 
@@ -357,11 +358,11 @@ public class MissionService {
         );
         recentMissionContextJson = missionWeatherContextService.enrich(context.userId(), recentMissionContextJson);
 
-        Optional<String> characterType = characterProfileClient.findActiveCharacterTypeCode(
+        Optional<CharacterProfileSnapshot> characterProfile = characterProfileClient.findActiveCharacterProfile(
                 context.userId(),
                 context.characterId()
         );
-        if (characterType.isEmpty()) {
+        if (characterProfile.isEmpty()) {
             return Optional.empty();
         }
 
@@ -378,7 +379,8 @@ public class MissionService {
             Optional<AiMissionTextResult> generatedText = aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
                         context.userId(),
                         context.characterId(),
-                        characterType.get(),
+                        characterProfile.get().characterTypeCode(),
+                        characterProfile.get().characterName(),
                         context.missionTemplateId(),
                         context.baseTitle(),
                         context.baseDescription(),

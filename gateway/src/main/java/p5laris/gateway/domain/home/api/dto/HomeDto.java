@@ -2,6 +2,7 @@ package p5laris.gateway.domain.home.api.dto;
 
 import lombok.Builder;
 import lombok.Getter;
+import p5laris.gateway.domain.character.api.dto.CharacterGrowthResponse;
 
 
 public class HomeDto {
@@ -37,6 +38,7 @@ public class HomeDto {
         private String characterTypeCode;
         private String currentAssetUrl;
         private StatesSummary states;
+        private CharacterGrowthResponse growth;
     }
 
     @Getter

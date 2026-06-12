@@ -47,6 +47,7 @@ import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient.CharacterProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
@@ -193,8 +194,8 @@ class MissionServiceTest {
         reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, kafkaTemplate, characterProfileClient, onboardingProfileClient, missionNotificationKafkaPublisher);
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
-        when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
-                .thenReturn(Optional.of("NOVA"));
+        when(characterProfileClient.findActiveCharacterProfile(anyLong(), anyLong()))
+                .thenReturn(Optional.of(new CharacterProfileSnapshot("NOVA", "노바")));
         when(onboardingProfileClient.findProfile(anyLong()))
                 .thenReturn(Optional.empty());
         ReflectionTestUtils.setField(missionService, "clock", clock);

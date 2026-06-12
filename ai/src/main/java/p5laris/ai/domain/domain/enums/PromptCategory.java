@@ -8,6 +8,8 @@ package p5laris.ai.domain.domain.enums;
  */
 public enum PromptCategory {
     MISSION_GENERATION,
+    CHARACTER_TALK,
+    CHARACTER_TALK_SUMMARY,
     CHARACTER_TONE,
     COMPLETION_QA,
     FALLBACK

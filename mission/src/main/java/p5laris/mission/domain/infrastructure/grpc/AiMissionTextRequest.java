@@ -10,6 +10,7 @@ public record AiMissionTextRequest(
         Long userId,
         Long characterId,
         String characterType,
+        String characterName,
         Long missionTemplateId,
         String baseTitle,
         String baseDescription,

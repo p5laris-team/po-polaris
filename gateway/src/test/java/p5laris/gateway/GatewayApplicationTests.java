@@ -19,7 +19,9 @@ import org.springframework.boot.test.context.SpringBootTest;
         "app.public-base-url=https://p5laris.life",
         "app.default-share-image-url=https://p5laris.life/assets/share-placeholder.png",
         "internal.grpc-auth.enabled=true",
-        "internal.grpc-auth.token=test-internal-grpc-token"
+        "internal.grpc-auth.token=test-internal-grpc-token",
+        "portone.store-id=test-store-id",
+        "portone.channel-id=test-channel-id"
 })
 class GatewayApplicationTests {
 

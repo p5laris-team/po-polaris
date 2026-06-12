@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.p5laris.proto.ai.v1.AiErrorType;
 import com.p5laris.proto.ai.v1.AiServiceGrpc;
 import com.p5laris.proto.ai.v1.CharacterTalkStreamEventType;
+import com.p5laris.proto.ai.v1.GetCharacterTalkDiariesRequest;
+import com.p5laris.proto.ai.v1.GetCharacterTalkDiariesResponse;
+import com.p5laris.proto.ai.v1.GetCharacterTalkMessagesRequest;
+import com.p5laris.proto.ai.v1.GetCharacterTalkMessagesResponse;
 import com.p5laris.proto.ai.v1.StreamCharacterTalkRequest;
 import com.p5laris.proto.ai.v1.StreamCharacterTalkResponse;
 import com.p5laris.proto.character.v1.*;
@@ -15,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import p5laris.gateway.domain.character.api.dto.CharacterTalkDiariesResponse;
+import p5laris.gateway.domain.character.api.dto.CharacterTalkMessagesResponse;
 import p5laris.gateway.domain.character.api.dto.CharacterTalkStreamRequest;
 import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
 import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkAiProperties;
@@ -27,6 +33,7 @@ import p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -295,6 +302,63 @@ public class CharacterGatewayService {
         SseEmitter emitter = new SseEmitter(characterTalkSseProperties.normalizedTimeoutMs());
         CompletableFuture.runAsync(() -> streamTalkResponse(emitter, userId, request, requestId, context));
         return emitter;
+    }
+
+    public CharacterTalkMessagesResponse getCharacterTalkMessages(Long characterId, Long userId, LocalDate date) {
+        GetCharacterTalkMessagesResponse response = aiStub
+                .withDeadlineAfter(characterTalkAiProperties.normalizedDeadlineMs(), TimeUnit.MILLISECONDS)
+                .getCharacterTalkMessages(GetCharacterTalkMessagesRequest.newBuilder()
+                        .setUserId(userId)
+                        .setCharacterId(characterId)
+                        .setDate(date != null ? date.toString() : "")
+                        .build());
+
+        return new CharacterTalkMessagesResponse(
+                response.getCharacterId(),
+                response.getDate(),
+                response.getLatestSessionId(),
+                response.getMessagesList().stream()
+                        .map(item -> new CharacterTalkMessagesResponse.MessageItem(
+                                item.getRole(),
+                                item.getContent(),
+                                item.getSequence(),
+                                item.getRequestId(),
+                                item.getFallbackUsed(),
+                                item.getCreatedAt(),
+                                item.getSessionId()
+                        ))
+                        .toList()
+        );
+    }
+
+    public CharacterTalkDiariesResponse getCharacterTalkDiaries(
+            Long characterId,
+            Long userId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        GetCharacterTalkDiariesResponse response = aiStub
+                .withDeadlineAfter(characterTalkAiProperties.normalizedDeadlineMs(), TimeUnit.MILLISECONDS)
+                .getCharacterTalkDiaries(GetCharacterTalkDiariesRequest.newBuilder()
+                        .setUserId(userId)
+                        .setCharacterId(characterId)
+                        .setFromDate(fromDate != null ? fromDate.toString() : "")
+                        .setToDate(toDate != null ? toDate.toString() : "")
+                        .build());
+
+        return new CharacterTalkDiariesResponse(
+                response.getCharacterId(),
+                response.getFromDate(),
+                response.getToDate(),
+                response.getItemsList().stream()
+                        .map(item -> new CharacterTalkDiariesResponse.DiaryItem(
+                                item.getDate(),
+                                item.getSummary(),
+                                item.getSourceSessionId(),
+                                item.getCreatedAt()
+                        ))
+                        .toList()
+        );
     }
 
     private void streamTalkResponse(

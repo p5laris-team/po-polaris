@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.tool.CharacterTalkToolsFactory;
 import reactor.core.publisher.Flux;
@@ -19,6 +20,8 @@ import static org.mockito.Mockito.when;
 
 class GeminiCharacterTalkGeneratorTest {
 
+    private static final PromptTemplateService FALLBACK_PROMPTS = (category, variables, fallback) -> fallback;
+
     @Test
     @DisplayName("별친구 대화 - Tool 객체를 provider streaming 호출에 함께 전달한다")
     void stream_passesToolsToProviderCall() {
@@ -32,7 +35,8 @@ class GeminiCharacterTalkGeneratorTest {
         GeminiCharacterTalkGenerator generator = new GeminiCharacterTalkGenerator(
                 chatClient,
                 properties,
-                toolsFactory
+                toolsFactory,
+                FALLBACK_PROMPTS
         );
 
         List<String> chunks = new ArrayList<>();
