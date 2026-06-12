@@ -63,6 +63,14 @@ jobs:
             --tests "p5laris.ai.domain.infrastructure.provider.*" \
             --stacktrace
 
+      - name: Run notification token hygiene tests
+        run: |
+          ./gradlew \
+            :notification:test \
+            --tests "p5laris.notification.domain.application.NotificationServiceTest" \
+            --tests "p5laris.notification.domain.application.FcmSenderServiceTest" \
+            --stacktrace
+
       - name: Verify JaCoCo baseline
         run: ./gradlew jacocoBaselineVerification --stacktrace
 

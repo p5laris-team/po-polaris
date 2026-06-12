@@ -16,8 +16,10 @@ import p5laris.notification.domain.domain.entity.Notification;
 import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
 import p5laris.notification.domain.domain.entity.NotificationSetting;
 import p5laris.notification.domain.domain.enums.FcmPlatform;
+import p5laris.notification.domain.domain.enums.FcmTokenDeactivatedReason;
 import p5laris.notification.domain.domain.enums.NotificationType;
 import p5laris.notification.domain.domain.enums.PushDeliveryStatus;
+import p5laris.notification.domain.exception.NotificationException;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
 import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
 import p5laris.notification.domain.domain.repository.NotificationRepository;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -173,5 +176,62 @@ class NotificationServiceTest {
         assertThat(delivery.getFcmDeviceTokenId()).isEqualTo(200L);
         assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.PENDING);
         assertThat(delivery.getNextAttemptAt()).isNotNull();
+    }
+    @Test
+    void registeringDeactivatedToken_reactivatesExistingRow() {
+        FcmDeviceToken existingToken = FcmDeviceToken.builder()
+                .userId(999L)
+                .fcmToken("same-token")
+                .tokenHash("existing-hash")
+                .platform(FcmPlatform.WEB)
+                .build();
+        ReflectionTestUtils.setField(existingToken, "id", 200L);
+        existingToken.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
+        when(fcmDeviceTokenRepository.findByTokenHash(any(String.class)))
+                .thenReturn(Optional.of(existingToken));
+
+        var response = notificationService.registerFcmToken(1001L, "same-token");
+
+        assertThat(response.getId()).isEqualTo(200L);
+        assertThat(existingToken.getUserId()).isEqualTo(1001L);
+        assertThat(existingToken.isActive()).isTrue();
+        assertThat(existingToken.getDeactivatedAt()).isNull();
+        assertThat(existingToken.getDeactivatedReason()).isNull();
+        verify(fcmDeviceTokenRepository, never()).save(any(FcmDeviceToken.class));
+    }
+
+    @Test
+    void registeringBlankToken_rejectsWithoutPersistence() {
+        assertThatThrownBy(() -> notificationService.registerFcmToken(1001L, "  "))
+                .isInstanceOf(NotificationException.class);
+
+        verify(fcmDeviceTokenRepository, never()).findByTokenHash(any());
+        verify(fcmDeviceTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void createNotification_withoutActiveTokens_recordsSkippedDelivery() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(invocation -> {
+            Notification notification = invocation.getArgument(0);
+            ReflectionTestUtils.setField(notification, "id", 100L);
+            return notification;
+        });
+        when(notificationSettingRepository.findByUserId(1001L))
+                .thenReturn(Optional.of(NotificationSetting.defaultSetting(1001L)));
+        when(notificationDeliveryPolicy.decide(any(NotificationSetting.class), eq(NotificationType.MISSION)))
+                .thenReturn(NotificationDeliveryDecision.allowed());
+        when(fcmDeviceTokenRepository.findByUserIdAndActiveTrue(1001L)).thenReturn(List.of());
+
+        notificationService.createNotification(pushRequest, null);
+
+        ArgumentCaptor<NotificationPushDelivery> deliveryCaptor =
+                ArgumentCaptor.forClass(NotificationPushDelivery.class);
+        verify(notificationPushDeliveryRepository).save(deliveryCaptor.capture());
+
+        NotificationPushDelivery delivery = deliveryCaptor.getValue();
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SKIPPED);
+        assertThat(delivery.getFcmDeviceTokenId()).isNull();
+        assertThat(delivery.getErrorCode()).isEqualTo("NO_ACTIVE_TOKENS");
+        assertThat(delivery.getNextAttemptAt()).isNull();
     }
 }
