@@ -41,7 +41,7 @@ class PaymentStateTransitionTest {
     void writePaymentApproval_readyOrder_transitionsToPaid() {
         PaymentOrder readyOrder = order(10L, 1L, "order-1", PaymentStatus.READY);
         PaymentTxHelper helper = helper();
-        when(orderRepository.findByOrderNo("order-1")).thenReturn(Optional.of(readyOrder));
+        when(orderRepository.findByOrderNoForUpdate("order-1")).thenReturn(Optional.of(readyOrder));
         when(walletService.getMyWallet(1L))
                 .thenReturn(Wallet.builder().userId(1L).starPiece(350).build());
 
@@ -73,7 +73,7 @@ class PaymentStateTransitionTest {
     void writePaymentApproval_failedOrder_rejectsTransition() {
         PaymentOrder failedOrder = order(10L, 1L, "order-1", PaymentStatus.FAILED);
         PaymentTxHelper helper = helper();
-        when(orderRepository.findByOrderNo("order-1")).thenReturn(Optional.of(failedOrder));
+        when(orderRepository.findByOrderNoForUpdate("order-1")).thenReturn(Optional.of(failedOrder));
 
         assertThatThrownBy(() -> helper.writePaymentApproval(
                 1L, "order-1", "payment-1", "TOSS_PAYMENTS", "CARD"
@@ -94,7 +94,7 @@ class PaymentStateTransitionTest {
     void writePaymentApproval_otherOwner_rejectsTransition() {
         PaymentOrder anotherUsersOrder = order(10L, 2L, "order-1", PaymentStatus.READY);
         PaymentTxHelper helper = helper();
-        when(orderRepository.findByOrderNo("order-1")).thenReturn(Optional.of(anotherUsersOrder));
+        when(orderRepository.findByOrderNoForUpdate("order-1")).thenReturn(Optional.of(anotherUsersOrder));
 
         assertThatThrownBy(() -> helper.writePaymentApproval(
                 1L, "order-1", "payment-1", "TOSS_PAYMENTS", "CARD"

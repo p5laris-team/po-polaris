@@ -38,7 +38,7 @@ public class PaymentTxHelper {
     @Transactional
     public int writePaymentApproval(Long userId, String orderNo, String paymentId, String pgProvider, String payMethod) {
         // 1. 주문 건 재조회
-        PaymentOrder order = orderRepository.findByOrderNo(orderNo)
+        PaymentOrder order = orderRepository.findByOrderNoForUpdate(orderNo)
                 .orElseThrow(() -> new UserException(UserErrorCode.PAYMENT_ORDER_NOT_FOUND));
 
         // 2. 주문 소유주 검증
