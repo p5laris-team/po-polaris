@@ -155,6 +155,7 @@ class AiMissionTextPersistenceServiceTest {
                 1001L,
                 2001L,
                 "NOVA",
+                "노바",
                 3001L,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
