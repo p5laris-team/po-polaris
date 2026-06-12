@@ -16,6 +16,7 @@ java {
 
 dependencies {
     implementation project(':proto')
+    implementation project(':common')
     implementation 'io.grpc:grpc-services'
 
     implementation 'net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE'
@@ -45,4 +46,12 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty 'rag.benchmark.enabled', System.getProperty('rag.benchmark.enabled', 'false')
+    systemProperty 'rag.benchmark.database', System.getProperty('rag.benchmark.database', 'po_rag_benchmark')
+    systemProperty 'rag.benchmark.adminUrl', System.getProperty('rag.benchmark.adminUrl', 'jdbc:postgresql://localhost:5432/postgres')
+    systemProperty 'rag.benchmark.url', System.getProperty('rag.benchmark.url', "jdbc:postgresql://localhost:5432/${System.getProperty('rag.benchmark.database', 'po_rag_benchmark')}")
+    systemProperty 'rag.benchmark.username', System.getProperty('rag.benchmark.username', 'root')
+    systemProperty 'rag.benchmark.password', System.getProperty('rag.benchmark.password', '12345678')
+    systemProperty 'rag.benchmark.warmupRuns', System.getProperty('rag.benchmark.warmupRuns', '10')
+    systemProperty 'rag.benchmark.measuredRuns', System.getProperty('rag.benchmark.measuredRuns', '40')
 }

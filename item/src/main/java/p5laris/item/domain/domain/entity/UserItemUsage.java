@@ -2,7 +2,7 @@ package p5laris.item.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import p5laris.item.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 /**
  * 아이템 사용 이력 엔티티.

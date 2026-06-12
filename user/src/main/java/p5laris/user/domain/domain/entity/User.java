@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import p5laris.user.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 @Entity
 @Table(name = "users")

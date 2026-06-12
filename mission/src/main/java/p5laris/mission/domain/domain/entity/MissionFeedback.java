@@ -12,7 +12,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import p5laris.mission.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;

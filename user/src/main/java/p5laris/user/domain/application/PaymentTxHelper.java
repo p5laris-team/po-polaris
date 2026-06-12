@@ -93,7 +93,12 @@ public class PaymentTxHelper {
      */
     @Transactional
     public void writePaymentFailure(String orderNo, PaymentStatus status) {
-        orderRepository.findByOrderNo(orderNo).ifPresent(order -> {
+        orderRepository.findByOrderNoForUpdate(orderNo).ifPresent(order -> {
+            if (order.getStatus() != PaymentStatus.READY) {
+                log.info("Payment failure update skipped because order is already processed. orderNo={}, status={}",
+                        orderNo, order.getStatus());
+                return;
+            }
             order.updateStatus(status);
             orderRepository.save(order);
             log.info("Payment status updated to FAILED. orderNo={}", orderNo);

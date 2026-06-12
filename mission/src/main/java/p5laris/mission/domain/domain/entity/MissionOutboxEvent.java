@@ -14,7 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import p5laris.mission.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 
 import java.time.LocalDateTime;

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import p5laris.mission.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.application.memory.UserMemoryEmbeddingJob;
 import p5laris.mission.domain.application.memory.UserMemoryRagHit;
 import p5laris.mission.domain.domain.entity.UserMemory;
@@ -200,6 +200,8 @@ public class UserMemoryEmbeddingJdbcRepository {
     ) {
         String vectorLiteral = EmbeddingVectorUtils.toPgVectorLiteral(normalizedQueryVector);
         double maxDistance = 1.0d - Math.min(1.0d, Math.max(0.0d, similarityThreshold));
+        int resultLimit = Math.max(1, topK);
+        int candidateLimit = Math.max(100, resultLimit * 20);
         return jdbcTemplate.query("""
                         SELECT
                             user_memory_id,
@@ -223,23 +225,28 @@ public class UserMemoryEmbeddingJdbcRepository {
                             FROM user_memory_embeddings e
                             JOIN user_memories m ON m.id = e.user_memory_id
                             WHERE e.user_id = ?
-                              AND e.status = ?
+                              AND e.status = 'COMPLETED'
                               AND e.embedding_model = ?
                               AND e.embedding_dimension = ?
                               AND e.embedding IS NOT NULL
-                        ) hits
+                            ORDER BY e.embedding <=> CAST(? AS vector) ASC
+                            LIMIT ?
+                        ) candidates
                         WHERE distance <= ?
-                        ORDER BY distance ASC, importance DESC, created_at DESC
+                        ORDER BY distance ASC,
+                                 importance DESC,
+                                 created_at DESC
                         LIMIT ?
                         """,
                 (rs, rowNum) -> toRagHit(rs),
                 vectorLiteral,
                 userId,
-                UserMemoryEmbeddingStatus.COMPLETED.name(),
                 model,
                 dimension,
+                vectorLiteral,
+                candidateLimit,
                 maxDistance,
-                Math.max(1, topK)
+                resultLimit
         );
     }
 

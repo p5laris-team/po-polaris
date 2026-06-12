@@ -5,8 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
 /**
  * mission 모듈의 알림 요청을 Kafka로 발행하는 adapter다.
  *
@@ -24,6 +22,8 @@ public class MissionNotificationKafkaPublisher {
     private static final String MISSION_OFFER_TITLE = "새 미션이 도착했어요";
     private static final String DEFAULT_MISSION_OFFER_BODY = "새 미션을 해볼까요?";
     private static final String MISSION_REWARD_RECOVERED_TITLE = "별조각 지급이 완료됐어요";
+    private static final String MISSION_OFFER_NOTIFICATION_KEY_PREFIX = "MISSION_OFFER_NOTIFICATION:";
+    private static final String MISSION_REWARD_RECOVERED_NOTIFICATION_KEY_PREFIX = "MISSION_REWARD_RECOVERED_NOTIFICATION:";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -32,14 +32,17 @@ public class MissionNotificationKafkaPublisher {
             Long missionId,
             String missionTitle
     ) {
-        send(new MissionNotificationRequestEvent(
-                userId,
-                MISSION_OFFER_TITLE,
-                toMissionOfferBody(missionTitle),
-                NOTIFICATION_TYPE_MISSION,
-                TARGET_TYPE_MISSION,
-                missionId
-        ));
+        send(
+                MISSION_OFFER_NOTIFICATION_KEY_PREFIX + missionId,
+                new MissionNotificationRequestEvent(
+                        userId,
+                        MISSION_OFFER_TITLE,
+                        toMissionOfferBody(missionTitle),
+                        NOTIFICATION_TYPE_MISSION,
+                        TARGET_TYPE_MISSION,
+                        missionId
+                )
+        );
     }
 
     public void sendMissionRewardRecoveredNotification(
@@ -47,22 +50,25 @@ public class MissionNotificationKafkaPublisher {
             Long missionId,
             int rewardStarPiece
     ) {
-        send(new MissionNotificationRequestEvent(
-                userId,
-                MISSION_REWARD_RECOVERED_TITLE,
-                toMissionRewardRecoveredBody(rewardStarPiece),
-                NOTIFICATION_TYPE_MISSION,
-                TARGET_TYPE_MISSION,
-                missionId
-        ));
+        send(
+                MISSION_REWARD_RECOVERED_NOTIFICATION_KEY_PREFIX + missionId,
+                new MissionNotificationRequestEvent(
+                        userId,
+                        MISSION_REWARD_RECOVERED_TITLE,
+                        toMissionRewardRecoveredBody(rewardStarPiece),
+                        NOTIFICATION_TYPE_MISSION,
+                        TARGET_TYPE_MISSION,
+                        missionId
+                )
+        );
     }
 
-    private void send(MissionNotificationRequestEvent event) {
+    private void send(String idempotencyKey, MissionNotificationRequestEvent event) {
         try {
-            kafkaTemplate.send(NOTIFICATION_REQUEST_TOPIC, UUID.randomUUID().toString(), event);
+            kafkaTemplate.send(NOTIFICATION_REQUEST_TOPIC, idempotencyKey, event);
         } catch (Exception e) {
-            log.warn("미션 알림 요청 Kafka 발행 실패. userId={}, targetType={}, targetId={}",
-                    event.userId(), event.targetType(), event.targetId(), e);
+            log.warn("미션 알림 요청 Kafka 발행 실패. userId={}, targetType={}, targetId={}, idempotencyKey={}",
+                    event.userId(), event.targetType(), event.targetId(), idempotencyKey, e);
         }
     }
 

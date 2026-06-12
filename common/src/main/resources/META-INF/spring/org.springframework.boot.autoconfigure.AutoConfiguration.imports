@@ -1,0 +1,2 @@
+p5laris.common.tracing.GrpcServerTraceConfig
+p5laris.common.tracing.GrpcClientTraceConfig

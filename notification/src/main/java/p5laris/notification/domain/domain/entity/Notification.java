@@ -12,7 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import p5laris.notification.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.notification.domain.domain.enums.NotificationTargetType;
 import p5laris.notification.domain.domain.enums.NotificationType;
 

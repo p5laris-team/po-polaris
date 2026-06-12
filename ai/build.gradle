@@ -16,6 +16,7 @@ java {
 
 dependencies {
     implementation project(':proto')
+    implementation project(':common')
     implementation 'io.grpc:grpc-services'
     implementation platform('org.springframework.ai:spring-ai-bom:2.0.0-M5')
     implementation platform('io.grpc:grpc-bom:1.70.0')

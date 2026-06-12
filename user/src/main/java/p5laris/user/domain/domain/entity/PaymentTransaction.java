@@ -2,12 +2,17 @@ package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import p5laris.user.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payment_transactions")
+@Table(
+        name = "payment_transactions",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_payment_transactions_order", columnNames = "payment_order_id")
+        }
+)
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

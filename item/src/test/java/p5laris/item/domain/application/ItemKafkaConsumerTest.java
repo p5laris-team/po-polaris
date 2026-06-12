@@ -10,7 +10,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.item.domain.application.event.StarPieceSpentEvent;
 import p5laris.item.domain.application.event.StarPieceSpendFailedEvent;
+import p5laris.item.domain.domain.entity.Item;
+import p5laris.item.domain.domain.entity.UserItem;
 import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
@@ -20,6 +23,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -96,6 +100,52 @@ class ItemKafkaConsumerTest {
         assertThat(purchase.getStatus()).isEqualTo("FAILED");
         assertThat(purchase.getAttemptCount()).isZero();
         verify(userItemPurchaseRepository).save(purchase);
+    }
+
+    @Test
+    @DisplayName("차감 성공 이벤트가 중복 delivery되어도 구매 확정과 아이템 지급은 한 번만 수행한다")
+    void handleStarPieceSpent_duplicateDelivery_completesPurchaseOnlyOnce() throws Exception {
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(1L)
+                .item(Item.builder()
+                        .id(200L)
+                        .name("테스트 아이템")
+                        .itemType("FOOD")
+                        .price(100)
+                        .build())
+                .quantity(1)
+                .build();
+        UserItemPurchase purchase = UserItemPurchase.builder()
+                .id(30L)
+                .userId(1L)
+                .userItem(userItem)
+                .itemId(200L)
+                .quantity(1)
+                .price(100)
+                .starPiece(0)
+                .transactionId(0L)
+                .idempotencyKey("ITEM_PURCHASE:30")
+                .status("PENDING")
+                .build();
+        when(userItemPurchaseRepository.findById(30L)).thenReturn(Optional.of(purchase));
+
+        StarPieceSpentEvent event = StarPieceSpentEvent.builder()
+                .purchaseId(30L)
+                .remainingStarPiece(400)
+                .transactionId(950L)
+                .build();
+        String payload = objectMapper.writeValueAsString(event);
+
+        itemKafkaConsumer.handleStarPieceSpent(payload);
+        itemKafkaConsumer.handleStarPieceSpent(payload);
+
+        assertThat(purchase.getStatus()).isEqualTo("COMPLETED");
+        assertThat(purchase.getTransactionId()).isEqualTo(950L);
+        assertThat(userItem.getQuantity()).isEqualTo(2);
+        verify(userItemPurchaseRepository, times(1)).save(purchase);
+        verify(userItemRepository, times(1)).save(userItem);
+        verify(eventPublisher, times(2)).publishEvent(any(Object.class));
     }
 
     private UserItemPurchase pendingPurchase(Long purchaseId) {
