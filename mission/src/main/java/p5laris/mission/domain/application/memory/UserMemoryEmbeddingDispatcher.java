@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.infrastructure.config.MissionMemoryEmbeddingProperties;
 import p5laris.mission.domain.infrastructure.config.MissionRagProperties;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;

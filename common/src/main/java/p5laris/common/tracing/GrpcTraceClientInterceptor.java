@@ -9,7 +9,7 @@ import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
 
 /**
- * 현재 MDC 또는 gRPC Context의 traceId를 다음 gRPC 호출 metadata에 싣는다.
+ * gRPC 클라이언트 호출에 현재 traceId를 metadata로 전달한다.
  */
 public class GrpcTraceClientInterceptor implements ClientInterceptor {
 

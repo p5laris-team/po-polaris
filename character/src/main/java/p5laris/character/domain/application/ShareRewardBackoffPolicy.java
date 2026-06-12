@@ -1,6 +1,7 @@
 package p5laris.character.domain.application;
 
 import org.springframework.stereotype.Component;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
 
 import java.time.LocalDateTime;
@@ -15,12 +16,11 @@ public class ShareRewardBackoffPolicy {
     }
 
     public LocalDateTime nextAttemptAt(LocalDateTime now, int attemptCountAfterFailure) {
-        int safeAttemptCount = Math.max(1, attemptCountAfterFailure);
-        int exponent = Math.min(safeAttemptCount - 1, 5);
-        long delaySeconds = Math.min(
-                properties.getRetryMaxDelaySeconds(),
-                properties.getRetryInitialDelaySeconds() * (1L << exponent)
+        return OutboxBackoffPolicy.nextAttemptAt(
+                now,
+                attemptCountAfterFailure,
+                properties.getRetryInitialDelaySeconds(),
+                properties.getRetryMaxDelaySeconds()
         );
-        return now.plusSeconds(delaySeconds);
     }
 }

@@ -1,0 +1,52 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'p5laris'
+version = '0.0.1-SNAPSHOT'
+description = 'common'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:3.5.14"
+    }
+}
+
+dependencies {
+    compileOnly project(':proto')
+
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
+
+    compileOnly 'net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE'
+    compileOnly 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
+    compileOnly 'io.grpc:grpc-stub:1.63.0'
+    compileOnly 'io.grpc:grpc-protobuf:1.63.0'
+    compileOnly 'org.slf4j:slf4j-api:2.0.17'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    testImplementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE'
+    testImplementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
+    testImplementation 'io.grpc:grpc-stub:1.63.0'
+    testImplementation 'io.grpc:grpc-protobuf:1.63.0'
+    testImplementation 'org.slf4j:slf4j-api:2.0.17'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

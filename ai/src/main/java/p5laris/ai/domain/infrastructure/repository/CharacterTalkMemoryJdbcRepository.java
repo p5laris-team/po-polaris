@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
-import p5laris.ai.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.enums.CharacterTalkMemoryType;
 
 import java.sql.ResultSet;

@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import p5laris.notification.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 import java.time.LocalTime;
 

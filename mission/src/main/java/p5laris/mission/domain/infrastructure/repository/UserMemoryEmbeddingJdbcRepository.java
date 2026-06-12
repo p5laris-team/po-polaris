@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import p5laris.mission.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.application.memory.UserMemoryEmbeddingJob;
 import p5laris.mission.domain.application.memory.UserMemoryRagHit;
 import p5laris.mission.domain.domain.entity.UserMemory;
