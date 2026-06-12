@@ -1,4 +1,10 @@
 {
+  "scripts": {
+    "simulation:data": "node simulation/generate-synthetic-data.js",
+    "simulation:validate": "node simulation/validate-simulation.js",
+    "simulation:mock": "node simulation/ai-mock-server.js",
+    "simulation:smoke": "node simulation/run-k6-smoke.js"
+  },
   "dependencies": {
     "express": "^5.2.1"
   }
