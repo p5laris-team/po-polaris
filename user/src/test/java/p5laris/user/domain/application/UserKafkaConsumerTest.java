@@ -13,6 +13,7 @@ import p5laris.user.domain.application.event.ItemPurchaseRequestedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnFailedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnRequestedEvent;
 import p5laris.user.domain.application.event.StarPieceEarnedEvent;
+import p5laris.user.domain.application.event.StarPieceSpentEvent;
 import p5laris.user.domain.application.event.StarPieceSpendFailedEvent;
 import p5laris.user.domain.domain.entity.StarPieceTransaction;
 import p5laris.user.domain.exception.KafkaConsumerProcessingException;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -86,6 +88,49 @@ class UserKafkaConsumerTest {
         assertThat(event.getIdempotencyKey()).isEqualTo("MISSION_REWARD:100");
         assertThat(event.getBalanceAfter()).isEqualTo(115);
         assertThat(event.getTransactionId()).isEqualTo(900L);
+    }
+
+    @Test
+    @DisplayName("별조각 적립 요청이 중복 delivery되어도 같은 멱등키와 거래 ID로 성공 이벤트를 재발행한다")
+    void handleStarPieceEarnRequested_duplicateDelivery_reusesIdempotentTransaction() throws Exception {
+        StarPieceEarnRequestedEvent request = StarPieceEarnRequestedEvent.builder()
+                .outboxId(10L)
+                .userId(1L)
+                .amount(15)
+                .reason("MISSION_REWARD")
+                .refType("MISSION")
+                .refId(100L)
+                .idempotencyKey("MISSION_REWARD:100")
+                .build();
+        StarPieceTransaction transaction = StarPieceTransaction.builder()
+                .id(900L)
+                .userId(1L)
+                .amount(15)
+                .balanceAfter(115)
+                .reason("MISSION_REWARD")
+                .refType("MISSION")
+                .refId(100L)
+                .idempotencyKey("MISSION_REWARD:100")
+                .build();
+        when(walletService.earnStarPiece(1L, 15, "MISSION_REWARD", "MISSION", 100L, "MISSION_REWARD:100"))
+                .thenReturn(transaction);
+
+        String payload = objectMapper.writeValueAsString(request);
+        userKafkaConsumer.handleStarPieceEarnRequested(payload);
+        userKafkaConsumer.handleStarPieceEarnRequested(payload);
+
+        ArgumentCaptor<StarPieceEarnedEvent> eventCaptor = ArgumentCaptor.forClass(StarPieceEarnedEvent.class);
+        verify(walletService, times(2))
+                .earnStarPiece(1L, 15, "MISSION_REWARD", "MISSION", 100L, "MISSION_REWARD:100");
+        verify(kafkaTemplate, times(2))
+                .send(eq("star-piece-earned"), eq("MISSION_REWARD:100"), eventCaptor.capture());
+
+        assertThat(eventCaptor.getAllValues())
+                .extracting(StarPieceEarnedEvent::getTransactionId)
+                .containsExactly(900L, 900L);
+        assertThat(eventCaptor.getAllValues())
+                .extracting(StarPieceEarnedEvent::getIdempotencyKey)
+                .containsExactly("MISSION_REWARD:100", "MISSION_REWARD:100");
     }
 
     @Test
@@ -157,5 +202,47 @@ class UserKafkaConsumerTest {
         StarPieceSpendFailedEvent event = eventCaptor.getValue();
         assertThat(event.getPurchaseId()).isEqualTo(40L);
         assertThat(event.getErrorCode()).isEqualTo("STAR_PIECE_NOT_ENOUGH");
+    }
+
+    @Test
+    @DisplayName("아이템 구매 요청이 중복 delivery되어도 같은 멱등키와 거래 ID로 차감 성공 이벤트를 재발행한다")
+    void handleItemPurchaseRequest_duplicateDelivery_reusesIdempotentTransaction() throws Exception {
+        ItemPurchaseRequestedEvent request = ItemPurchaseRequestedEvent.builder()
+                .purchaseId(50L)
+                .userId(5L)
+                .itemId(500L)
+                .price(100)
+                .idempotencyKey("ITEM_PURCHASE:50")
+                .build();
+        StarPieceTransaction transaction = StarPieceTransaction.builder()
+                .id(950L)
+                .userId(5L)
+                .transactionType("SPEND")
+                .amount(-100)
+                .balanceAfter(400)
+                .reason("ITEM_PURCHASE")
+                .refType("ITEM")
+                .refId(500L)
+                .idempotencyKey("ITEM_PURCHASE:50")
+                .build();
+        when(walletService.spendStarPiece(5L, 100, "ITEM_PURCHASE", "ITEM", 500L, "ITEM_PURCHASE:50"))
+                .thenReturn(transaction);
+
+        String payload = objectMapper.writeValueAsString(request);
+        userKafkaConsumer.handleItemPurchaseRequest(payload);
+        userKafkaConsumer.handleItemPurchaseRequest(payload);
+
+        ArgumentCaptor<StarPieceSpentEvent> eventCaptor = ArgumentCaptor.forClass(StarPieceSpentEvent.class);
+        verify(walletService, times(2))
+                .spendStarPiece(5L, 100, "ITEM_PURCHASE", "ITEM", 500L, "ITEM_PURCHASE:50");
+        verify(kafkaTemplate, times(2))
+                .send(eq("star-piece-spent"), eq("ITEM_PURCHASE:50"), eventCaptor.capture());
+
+        assertThat(eventCaptor.getAllValues())
+                .extracting(StarPieceSpentEvent::getTransactionId)
+                .containsExactly(950L, 950L);
+        assertThat(eventCaptor.getAllValues())
+                .extracting(StarPieceSpentEvent::getRemainingStarPiece)
+                .containsExactly(400, 400);
     }
 }

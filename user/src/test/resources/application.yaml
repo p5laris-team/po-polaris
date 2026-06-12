@@ -1,0 +1,106 @@
+server:
+  port: 0
+  tomcat:
+    accept-count: 200
+    max-connections: 8192
+
+spring:
+  application:
+    name: user
+  kafka:
+    bootstrap-servers: localhost:9097
+    listener:
+      auto-startup: false
+    consumer:
+      group-id: user-test-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/po_user_test
+    driver-class-name: org.postgresql.Driver
+    username: root
+    password: 12345678
+    hikari:
+      maximum-pool-size: 4
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: false
+
+flyway:
+  enabled: true
+  locations: classpath:db/migration
+  baseline-on-migrate: false
+  validate-on-migrate: true
+
+grpc:
+  default-deadline-ms: 3000
+  server:
+    port: 0
+    reflection-service-enabled: false
+  client:
+    character:
+      address: static://localhost:19091
+      negotiationType: plaintext
+    item:
+      address: static://localhost:19092
+      negotiationType: plaintext
+    mission:
+      address: static://localhost:19093
+      negotiationType: plaintext
+    ai:
+      address: static://localhost:19094
+      negotiationType: plaintext
+    event-log:
+      address: static://localhost:19095
+      negotiationType: plaintext
+    notification:
+      address: static://localhost:19096
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: true
+    token: test-internal-grpc-token
+
+jwt:
+  secret: test-jwt-secret-test-jwt-secret-test-jwt-secret
+  access-expiration-ms: 3600000
+  refresh-expiration-ms: 1209600000
+
+oauth:
+  google:
+    client-id: test-client-id
+    client-secret: test-client-secret
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
+
+portone:
+  store-id: test-store-id
+  api-secret: test-api-secret
+  mock-mode: true
