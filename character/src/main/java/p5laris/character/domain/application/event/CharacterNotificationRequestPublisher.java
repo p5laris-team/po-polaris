@@ -19,6 +19,10 @@ public class CharacterNotificationRequestPublisher {
 
     private static final String DEFAULT_CHARACTER_NAME = "별친구";
     private static final String SHARE_REWARD_TITLE = "공유 보상 지급 완료";
+    private static final String NOTIFICATION_TYPE_CARE = "NOTIFICATION_TYPE_CARE";
+    private static final String NOTIFICATION_TYPE_SHARE = "NOTIFICATION_TYPE_SHARE";
+    private static final String TARGET_TYPE_CHARACTER = "CHARACTER";
+    private static final String TARGET_TYPE_SHARE = "SHARE";
 
     private final ObjectMapper objectMapper;
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
@@ -36,7 +40,9 @@ public class CharacterNotificationRequestPublisher {
                         userId,
                         message.title(),
                         message.body(),
-                        "NOTIFICATION_TYPE_CARE"
+                        NOTIFICATION_TYPE_CARE,
+                        TARGET_TYPE_CHARACTER,
+                        characterId
                 ),
                 UUID.randomUUID().toString()
         );
@@ -53,7 +59,9 @@ public class CharacterNotificationRequestPublisher {
                         userId,
                         SHARE_REWARD_TITLE,
                         "별조각 " + rewardStarPiece + "개가 도착했어요.",
-                        "NOTIFICATION_TYPE_SHARE"
+                        NOTIFICATION_TYPE_SHARE,
+                        TARGET_TYPE_SHARE,
+                        shareLogId
                 ),
                 "SHARE_REWARD_COMPLETED_NOTIFICATION:" + shareLogId
         );

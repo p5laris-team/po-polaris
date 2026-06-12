@@ -112,6 +112,30 @@ class NotificationServiceTest {
     }
 
     @Test
+    void proto_request의_멱등키로_중복_알림을_재사용한다() {
+        String idempotencyKey = "notification-key-1";
+        SendPushNotificationRequest requestWithKey = pushRequest.toBuilder()
+                .setIdempotencyKey(idempotencyKey)
+                .build();
+        Notification existingNotification = Notification.builder()
+                .userId(1001L)
+                .idempotencyKey(idempotencyKey)
+                .notificationType(NotificationType.MISSION)
+                .title("새 미션이 도착했어요")
+                .message("물 한 잔 마시기 미션을 해볼까요?")
+                .pushRequired(true)
+                .build();
+        when(notificationRepository.findByIdempotencyKey(idempotencyKey))
+                .thenReturn(Optional.of(existingNotification));
+
+        Notification result = notificationService.createNotification(requestWithKey);
+
+        assertThat(result).isSameAs(existingNotification);
+        verify(notificationRepository, never()).save(any(Notification.class));
+        verify(notificationPushDeliveryRepository, never()).save(any(NotificationPushDelivery.class));
+    }
+
+    @Test
     void 새_푸시_알림은_알림과_PENDING_발송이력을_같은_흐름에서_저장한다() {
         String idempotencyKey = "notification-key-1";
         FcmDeviceToken token = FcmDeviceToken.builder()

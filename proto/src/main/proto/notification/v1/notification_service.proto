@@ -101,6 +101,7 @@ message SendPushNotificationRequest {
   NotificationType notification_type = 4;
   optional TargetType target_type = 5;
   optional int64 target_id = 6;
+  optional string idempotency_key = 7;
 }
 
 message SendPushNotificationResponse {
