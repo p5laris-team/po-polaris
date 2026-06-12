@@ -2,6 +2,9 @@ package p5laris.item.domain.application;
 
 import com.p5laris.proto.item.v1.GetSkinAssetsRequest;
 import com.p5laris.proto.item.v1.GetSkinAssetsResponse;
+import com.p5laris.proto.item.v1.GetItemsRequest;
+import com.p5laris.proto.item.v1.GetUserItemsRequest;
+import com.p5laris.proto.item.v1.UseItemRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,15 +16,18 @@ import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
 import p5laris.item.domain.domain.entity.UserItemPurchase;
+import p5laris.item.domain.domain.entity.UserItemUsage;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemException;
+import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
 import java.util.concurrent.TimeUnit;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -272,5 +278,241 @@ class ItemServiceTest {
         verify(kafkaTemplate, times(1)).send(eq("item-purchase-requested"), eq(idempotencyKey), any());
         verify(userItemRepository, times(1)).save(any());
         verify(userItemPurchaseRepository, times(1)).save(any());
+    }
+
+    @Test
+    void getItems_returnsOwnedFlagAndCursorPage() {
+        Item first = item(10L, "Potion", "CONSUMABLE", 20, "/items/potion.png");
+        Item second = item(20L, "Hat", "SKIN", 50, "https://cdn.example/hat.png");
+        Item lookahead = item(30L, "Snack", "CONSUMABLE", 10, null);
+        when(itemRepository.findByIdGreaterThanAndActiveOrderByIdAsc(eq(0L), eq(true), any()))
+                .thenReturn(List.of(first, second, lookahead));
+        when(userItemRepository.findByUserId(1L))
+                .thenReturn(List.of(UserItem.builder()
+                        .id(100L)
+                        .userId(1L)
+                        .item(second)
+                        .quantity(1)
+                        .build()));
+
+        var response = itemService.getItems(GetItemsRequest.newBuilder()
+                .setUserId(1L)
+                .setSize(2)
+                .setItemType("ALL")
+                .build());
+
+        assertThat(response.getItemsCount()).isEqualTo(2);
+        assertThat(response.getItems(0).getImageUrl())
+                .isEqualTo("https://d24c6my56k1w5v.cloudfront.net/items/potion.png");
+        assertThat(response.getItems(0).getOwned()).isFalse();
+        assertThat(response.getItems(1).getOwned()).isTrue();
+        assertThat(response.getItems(1).getImageUrl()).isEqualTo("https://cdn.example/hat.png");
+        assertThat(response.getPageInfo().getHasNext()).isTrue();
+        assertThat(response.getPageInfo().getNextCursor()).isNotBlank();
+    }
+
+    @Test
+    void getUserItems_filtersTypeAndUsesNumericCursorFallback() {
+        Item skin = item(20L, "Hat", "SKIN", 50, "/skins/hat.png");
+        UserItem userItem = UserItem.builder()
+                .id(101L)
+                .userId(1L)
+                .item(skin)
+                .quantity(2)
+                .build();
+        when(userItemRepository.findByUserIdAndItemItemTypeAndIdGreaterThanOrderByIdAsc(
+                eq(1L), eq("SKIN"), eq(100L), any()
+        )).thenReturn(List.of(userItem));
+
+        var response = itemService.getUserItems(GetUserItemsRequest.newBuilder()
+                .setUserId(1L)
+                .setCursor("100")
+                .setItemType("SKIN")
+                .setSize(10)
+                .build());
+
+        assertThat(response.getItemsCount()).isEqualTo(1);
+        assertThat(response.getItems(0).getUserItemId()).isEqualTo(101L);
+        assertThat(response.getItems(0).getQuantity()).isEqualTo(2);
+        assertThat(response.getPageInfo().getHasNext()).isFalse();
+    }
+
+    @Test
+    void useItem_decrementsQuantityAndSavesUsageContext() {
+        Item consumable = item(10L, "Potion", "CONSUMABLE", 20, null);
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(1L)
+                .item(consumable)
+                .quantity(3)
+                .build();
+        when(userItemUsageRepository.findByIdempotencyKey("use-1")).thenReturn(Optional.empty());
+        when(userItemRepository.findByUserIdAndItemId(1L, 10L)).thenReturn(Optional.of(userItem));
+        when(userItemUsageRepository.save(any(UserItemUsage.class))).thenAnswer(invocation -> {
+            UserItemUsage usage = invocation.getArgument(0);
+            ReflectionTestUtils.setField(usage, "id", 500L);
+            return usage;
+        });
+
+        var response = itemService.useItem(UseItemRequest.newBuilder()
+                .setUserId(1L)
+                .setItemId(10L)
+                .setQuantity(2)
+                .setRefType("CARE_ACTION")
+                .setRefId(900L)
+                .setIdempotencyKey("use-1")
+                .build());
+
+        assertThat(response.getUsageId()).isEqualTo(500L);
+        assertThat(response.getQuantityUsed()).isEqualTo(2);
+        assertThat(response.getRemainingQuantity()).isEqualTo(1);
+        assertThat(userItem.getQuantity()).isEqualTo(1);
+        verify(userItemUsageRepository).save(argThat(usage ->
+                usage.getRefType().equals("CARE_ACTION")
+                        && usage.getRefId().equals(900L)
+                        && usage.getIdempotencyKey().equals("use-1")
+        ));
+    }
+
+    @Test
+    void useItem_duplicateKeyReturnsPreviousResultWithoutSecondDecrement() {
+        Item consumable = item(10L, "Potion", "CONSUMABLE", 20, null);
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(1L)
+                .item(consumable)
+                .quantity(1)
+                .build();
+        UserItemUsage usage = UserItemUsage.builder()
+                .id(500L)
+                .userId(1L)
+                .userItem(userItem)
+                .itemId(10L)
+                .quantity(2)
+                .idempotencyKey("use-1")
+                .build();
+        when(userItemUsageRepository.findByIdempotencyKey("use-1"))
+                .thenReturn(Optional.of(usage));
+
+        var response = itemService.useItem(UseItemRequest.newBuilder()
+                .setUserId(1L)
+                .setItemId(10L)
+                .setQuantity(2)
+                .setIdempotencyKey("use-1")
+                .build());
+
+        assertThat(response.getUsageId()).isEqualTo(500L);
+        assertThat(response.getRemainingQuantity()).isEqualTo(1);
+        verify(userItemRepository, never()).findByUserIdAndItemId(any(), any());
+        verify(userItemUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void useItem_rejectsInsufficientQuantity() {
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(1L)
+                .item(item(10L, "Potion", "CONSUMABLE", 20, null))
+                .quantity(1)
+                .build();
+        when(userItemRepository.findByUserIdAndItemId(1L, 10L)).thenReturn(Optional.of(userItem));
+
+        assertThatThrownBy(() -> itemService.useItem(UseItemRequest.newBuilder()
+                .setUserId(1L)
+                .setItemId(10L)
+                .setQuantity(2)
+                .build()))
+                .isInstanceOf(ItemException.class)
+                .extracting("errorCode")
+                .isEqualTo(ItemErrorCode.ITEM_QUANTITY_NOT_ENOUGH);
+
+        assertThat(userItem.getQuantity()).isEqualTo(1);
+        verify(userItemUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void purchaseItem_rejectsAlreadyOwnedSkin() {
+        Item skin = item(10L, "Hat", "SKIN", 60, null);
+        when(itemRepository.findById(10L)).thenReturn(Optional.of(skin));
+        when(userItemRepository.findByUserIdAndItemId(1L, 10L))
+                .thenReturn(Optional.of(UserItem.builder()
+                        .id(100L)
+                        .userId(1L)
+                        .item(skin)
+                        .quantity(1)
+                        .build()));
+
+        assertThatThrownBy(() -> itemService.purchaseItem(
+                com.p5laris.proto.item.v1.PurchaseItemRequest.newBuilder()
+                        .setUserId(1L)
+                        .setItemId(10L)
+                        .setIdempotencyKey("purchase-1")
+                        .build()
+        ))
+                .isInstanceOf(ItemException.class)
+                .extracting("errorCode")
+                .isEqualTo(ItemErrorCode.ITEM_ALREADY_OWNED);
+
+        verify(userItemPurchaseRepository, never()).save(any());
+        verify(kafkaTemplate, never()).send(any(), any(), any());
+    }
+
+    @Test
+    void purchaseItem_kafkaFailureMarksPurchaseUnknownForRetry() {
+        Item consumable = item(10L, "Potion", "CONSUMABLE", 20, null);
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(1L)
+                .item(consumable)
+                .quantity(0)
+                .build();
+        UserItemPurchase purchase = UserItemPurchase.builder()
+                .id(500L)
+                .userId(1L)
+                .userItem(userItem)
+                .itemId(10L)
+                .quantity(2)
+                .price(40)
+                .starPiece(0)
+                .transactionId(0L)
+                .idempotencyKey("purchase-1")
+                .status("PENDING")
+                .build();
+        when(itemRepository.findById(10L)).thenReturn(Optional.of(consumable));
+        when(userItemRepository.findByUserIdAndItemId(1L, 10L))
+                .thenReturn(Optional.of(userItem));
+        when(userItemPurchaseRepository.save(any(UserItemPurchase.class))).thenReturn(purchase);
+        when(userItemPurchaseRepository.findById(500L)).thenReturn(Optional.of(purchase));
+        when(kafkaTemplate.send(any(), any(), any()))
+                .thenThrow(new IllegalStateException("broker unavailable"));
+
+        assertThatThrownBy(() -> itemService.purchaseItem(
+                com.p5laris.proto.item.v1.PurchaseItemRequest.newBuilder()
+                        .setUserId(1L)
+                        .setItemId(10L)
+                        .setQuantity(2)
+                        .setIdempotencyKey("purchase-1")
+                        .build()
+        ))
+                .isInstanceOf(ItemException.class)
+                .extracting("errorCode")
+                .isEqualTo(ItemErrorCode.WALLET_SERVICE_CALL_FAILED);
+
+        assertThat(purchase.getStatus()).isEqualTo("UNKNOWN");
+        assertThat(purchase.getAttemptCount()).isEqualTo(1);
+        assertThat(purchase.getNextAttemptAt()).isNotNull();
+    }
+
+    private Item item(Long id, String name, String type, int price, String imageUrl) {
+        return Item.builder()
+                .id(id)
+                .name(name)
+                .description(name + " description")
+                .itemType(type)
+                .price(price)
+                .effectType("ENERGY")
+                .imageUrl(imageUrl)
+                .active(true)
+                .build();
     }
 }
