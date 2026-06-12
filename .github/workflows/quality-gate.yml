@@ -1,0 +1,140 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gradle-tests:
+    name: Critical Gradle Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant Gradle execute permission
+        run: chmod +x ./gradlew
+
+      - name: Compile all production and test sources
+        run: ./gradlew testClasses --stacktrace
+
+      - name: Run critical unit tests
+        run: |
+          ./gradlew \
+            :user:test \
+            --tests "p5laris.user.domain.application.PaymentServiceIdempotencyTest" \
+            --tests "p5laris.user.domain.application.PaymentStateTransitionTest" \
+            --tests "p5laris.user.integration.*" \
+            --stacktrace
+          ./gradlew \
+            :mission:test \
+            --tests "p5laris.mission.domain.application.MissionRewardDispatcherTest" \
+            --tests "p5laris.mission.domain.application.time.MissionTimePolicyTest" \
+            --stacktrace
+
+      - name: Run AI application and policy tests
+        run: |
+          ./gradlew \
+            :ai:test \
+            --tests "p5laris.ai.domain.application.AiCharacterTalkServiceTest" \
+            --tests "p5laris.ai.domain.application.AiMissionTextPersistenceServiceTest" \
+            --tests "p5laris.ai.domain.application.AiTextEmbeddingServiceTest" \
+            --tests "p5laris.ai.domain.domain.policy.*" \
+            --tests "p5laris.ai.domain.infrastructure.provider.*" \
+            --stacktrace
+
+      - name: Verify JaCoCo baseline
+        run: ./gradlew jacocoBaselineVerification --stacktrace
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+            build/reports/jacoco/root/
+          retention-days: 14
+
+  contract-docs:
+    name: Contract Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant Gradle execute permission
+        run: chmod +x ./gradlew
+
+      - name: Generate REST Docs
+        run: ./gradlew :gateway:asciidoctor --stacktrace
+
+      - name: Upload REST Docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-rest-docs
+          path: gateway/build/docs/asciidoc/
+          retention-days: 14
+
+  simulation-smoke:
+    name: Load And Chaos Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install simulation dependencies
+        run: npm ci
+
+      - name: Generate deterministic datasets
+        run: npm run simulation:data
+
+      - name: Validate simulation artifacts
+        run: npm run simulation:validate
+
+      - name: Run k6 AI chaos smoke
+        run: npm run simulation:smoke
+
+      - name: Upload k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-ai-chaos-summary
+          path: simulation/results/
+          retention-days: 14
