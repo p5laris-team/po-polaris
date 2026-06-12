@@ -1,0 +1,42 @@
+= Polaris Gateway API Contracts
+:toc: left
+:toclevels: 2
+:sectlinks:
+:source-highlighter: highlightjs
+
+테스트가 통과한 요청과 응답으로 생성되는 Gateway 핵심 API 계약 문서입니다.
+
+== 결제 주문 생성
+
+include::{snippets}/payment-order-create/http-request.adoc[]
+include::{snippets}/payment-order-create/request-fields.adoc[]
+include::{snippets}/payment-order-create/http-response.adoc[]
+include::{snippets}/payment-order-create/response-fields.adoc[]
+
+== 미션 완료 답변
+
+include::{snippets}/mission-completion-answer/path-parameters.adoc[]
+include::{snippets}/mission-completion-answer/http-request.adoc[]
+include::{snippets}/mission-completion-answer/request-fields.adoc[]
+include::{snippets}/mission-completion-answer/http-response.adoc[]
+include::{snippets}/mission-completion-answer/response-fields.adoc[]
+
+== 내 캐릭터 조회
+
+include::{snippets}/character-me-get/http-request.adoc[]
+include::{snippets}/character-me-get/http-response.adoc[]
+include::{snippets}/character-me-get/response-fields.adoc[]
+
+== 사용자 프로필 조회
+
+include::{snippets}/user-me-get/http-request.adoc[]
+include::{snippets}/user-me-get/http-response.adoc[]
+include::{snippets}/user-me-get/response-fields.adoc[]
+
+== 아이템 구매
+
+include::{snippets}/item-purchase-create/request-headers.adoc[]
+include::{snippets}/item-purchase-create/http-request.adoc[]
+include::{snippets}/item-purchase-create/request-fields.adoc[]
+include::{snippets}/item-purchase-create/http-response.adoc[]
+include::{snippets}/item-purchase-create/response-fields.adoc[]
