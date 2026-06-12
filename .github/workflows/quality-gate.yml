@@ -71,6 +71,20 @@ jobs:
             --tests "p5laris.notification.domain.application.FcmSenderServiceTest" \
             --stacktrace
 
+      - name: Run item core service tests
+        run: |
+          ./gradlew \
+            :item:test \
+            --tests "p5laris.item.domain.application.ItemServiceTest" \
+            --stacktrace
+
+      - name: Run character core service tests
+        run: |
+          ./gradlew \
+            :character:test \
+            --tests "p5laris.character.domain.application.CharacterServiceTest" \
+            --stacktrace
+
       - name: Verify JaCoCo baseline
         run: ./gradlew jacocoBaselineVerification --stacktrace
 
