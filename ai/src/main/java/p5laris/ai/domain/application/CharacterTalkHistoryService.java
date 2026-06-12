@@ -13,7 +13,7 @@ import p5laris.ai.domain.application.dto.TextEmbeddingCommand;
 import p5laris.ai.domain.application.dto.TextEmbeddingResult;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
-import p5laris.ai.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.entity.CharacterTalkMessage;
 import p5laris.ai.domain.domain.entity.CharacterTalkSession;
 import p5laris.ai.domain.domain.enums.CharacterTalkMessageRole;

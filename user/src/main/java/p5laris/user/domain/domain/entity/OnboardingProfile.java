@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import p5laris.user.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 import java.time.LocalDateTime;
 

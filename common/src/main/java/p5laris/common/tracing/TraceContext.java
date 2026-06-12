@@ -9,7 +9,6 @@ import java.util.regex.Pattern;
 
 /**
  * HTTP, gRPC, 로그 MDC에서 공통으로 사용할 traceId 규칙을 관리한다.
- * requestId는 AI 멱등성 키이고, traceId는 여러 모듈 로그를 묶는 요청 추적 번호다.
  */
 public final class TraceContext {
 

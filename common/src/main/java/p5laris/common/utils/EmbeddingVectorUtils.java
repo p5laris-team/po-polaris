@@ -1,10 +1,10 @@
-package p5laris.mission.domain.application.memory;
+package p5laris.common.utils;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * pgvector에 저장할 float vector를 검증/정규화/문자열 리터럴로 변환한다.
+ * pgvector에 저장할 embedding vector를 검증, 정규화, 문자열 리터럴로 변환한다.
  */
 public final class EmbeddingVectorUtils {
 
@@ -39,11 +39,11 @@ public final class EmbeddingVectorUtils {
     public static String toPgVectorLiteral(List<Float> values) {
         StringBuilder builder = new StringBuilder(values.size() * 8);
         builder.append('[');
-        for (int i = 0; i < values.size(); i++) {
-            if (i > 0) {
+        for (int index = 0; index < values.size(); index++) {
+            if (index > 0) {
                 builder.append(',');
             }
-            builder.append(Float.toString(values.get(i)));
+            builder.append(Float.toString(values.get(index)));
         }
         builder.append(']');
         return builder.toString();

@@ -5,17 +5,17 @@ import io.grpc.Channel;
 import io.grpc.ClientCall;
 import io.grpc.ClientInterceptor;
 import io.grpc.MethodDescriptor;
+
 import java.util.concurrent.TimeUnit;
 
 /**
- * gRPC 클라이언트 호출 시 deadline(제한시간)이 설정되어 있지 않은 경우,
- * 설정된 기본 제한시간을 적용하여 스레드 무한 대기 현상을 방지합니다.
+ * gRPC 클라이언트 호출에 별도 deadline이 없으면 기본 제한 시간을 적용한다.
  */
 public class GrpcDeadlineClientInterceptor implements ClientInterceptor {
 
-    private final long defaultDeadlineMs;
-
     private static final long EVENT_LOG_DEADLINE_MS = 1000L;
+
+    private final long defaultDeadlineMs;
 
     public GrpcDeadlineClientInterceptor(long defaultDeadlineMs) {
         this.defaultDeadlineMs = defaultDeadlineMs;
@@ -30,8 +30,8 @@ public class GrpcDeadlineClientInterceptor implements ClientInterceptor {
         if (callOptions.getDeadline() == null) {
             long deadlineMs = defaultDeadlineMs;
             if (method.getFullMethodName() != null) {
-                if (method.getFullMethodName().contains("EventLogService") ||
-                    method.getFullMethodName().contains("AiService")) {
+                if (method.getFullMethodName().contains("EventLogService")
+                        || method.getFullMethodName().contains("AiService")) {
                     deadlineMs = EVENT_LOG_DEADLINE_MS;
                 }
             }

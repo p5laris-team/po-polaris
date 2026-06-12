@@ -9,7 +9,7 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 
 /**
- * gRPC metadata의 traceId를 현재 gRPC Context와 로그 MDC에 연결한다.
+ * gRPC 서버 호출에서 전달받은 traceId를 gRPC Context와 MDC에 연결한다.
  */
 public class GrpcTraceServerInterceptor implements ServerInterceptor {
 

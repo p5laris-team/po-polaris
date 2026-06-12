@@ -1,6 +1,7 @@
 package p5laris.mission.domain.application;
 
 import org.springframework.stereotype.Component;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import p5laris.mission.domain.infrastructure.config.MissionRewardOutboxProperties;
 
 import java.time.LocalDateTime;
@@ -19,12 +20,11 @@ public class MissionRewardBackoffPolicy {
      * 최초/최대 지연 시간은 운영 상황에 맞춰 env로 조절한다.
      */
     public LocalDateTime nextAttemptAt(LocalDateTime now, int attemptCountAfterFailure) {
-        int safeAttemptCount = Math.max(1, attemptCountAfterFailure);
-        int exponent = Math.min(safeAttemptCount - 1, 5);
-        long delaySeconds = Math.min(
-                missionRewardOutboxProperties.getRetryMaxDelaySeconds(),
-                missionRewardOutboxProperties.getRetryInitialDelaySeconds() * (1L << exponent)
+        return OutboxBackoffPolicy.nextAttemptAt(
+                now,
+                attemptCountAfterFailure,
+                missionRewardOutboxProperties.getRetryInitialDelaySeconds(),
+                missionRewardOutboxProperties.getRetryMaxDelaySeconds()
         );
-        return now.plusSeconds(delaySeconds);
     }
 }
