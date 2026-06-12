@@ -9,6 +9,7 @@ import p5laris.gateway.domain.user.api.dto.UserDto;
 import p5laris.gateway.domain.user.infrastructure.grpc.WalletGatewayService;
 import p5laris.gateway.domain.user.api.dto.WalletDto;
 import p5laris.gateway.domain.character.infrastructure.grpc.CharacterGatewayService;
+import p5laris.gateway.domain.character.api.dto.CharacterGrowthResponse;
 import p5laris.gateway.domain.character.api.dto.MyCharacterResponse;
 import p5laris.gateway.domain.character.api.dto.CharacterStatusResponse;
 import p5laris.gateway.domain.mission.infrastructure.grpc.MissionGatewayService;
@@ -52,6 +53,7 @@ public class HomeGatewayService {
         if (myChar != null && myChar.id() != null && myChar.id() > 0) {
             // Character Status 조회 (선택)
             HomeDto.StatesSummary statesSummary = null;
+            CharacterGrowthResponse growth = myChar.growth();
             try {
                 CharacterStatusResponse statusRes = characterGatewayService.getCharacterStatus(myChar.id(), userId);
                 if (statusRes != null && statusRes.states() != null) {
@@ -74,6 +76,9 @@ public class HomeGatewayService {
                                     .build())
                             .build();
                 }
+                if (statusRes != null && statusRes.growth() != null) {
+                    growth = statusRes.growth();
+                }
             } catch (Exception e) {
                 log.warn("Failed to get character status for characterId: {}. States will be null in home response. Error: {}", myChar.id(), e.getMessage());
             }
@@ -84,6 +89,7 @@ public class HomeGatewayService {
                     .characterTypeCode(myChar.characterTypeCode())
                     .currentAssetUrl(myChar.currentAssetUrl())
                     .states(statesSummary)
+                    .growth(growth)
                     .build();
         }
 
