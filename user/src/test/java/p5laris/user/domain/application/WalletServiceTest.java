@@ -82,6 +82,7 @@ class WalletServiceTest {
         assertThat(result.getIdempotencyKey()).isEqualTo(key);
 
         verify(walletRepository, never()).findByUserId(any());
+        verify(walletRepository, never()).findByUserIdForUpdate(any());
         verify(transactionRepository, never()).save(any());
     }
 
@@ -109,6 +110,39 @@ class WalletServiceTest {
 
         verify(walletRepository, times(1)).findByUserIdForUpdate(userId);
         verify(transactionRepository, times(1)).save(any(StarPieceTransaction.class));
+    }
+
+    @Test
+    @DisplayName("spendStarPiece - 멱등키 중복 요청 시 재차감 없이 기존 거래를 반환한다")
+    void spendStarPiece_duplicateIdempotencyKey_returnsExistingWithoutDebit() {
+        // given
+        Long userId = 1L;
+        String key = "ITEM_PURCHASE:900001:duplicate";
+        StarPieceTransaction existingTx = StarPieceTransaction.builder()
+                .id(1000L)
+                .userId(userId)
+                .transactionType("SPEND")
+                .amount(-150)
+                .balanceAfter(350)
+                .reason("ITEM_PURCHASE")
+                .refType("ITEM")
+                .refId(200L)
+                .idempotencyKey(key)
+                .build();
+
+        when(transactionRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existingTx));
+
+        // when
+        StarPieceTransaction result = walletService.spendStarPiece(userId, 150, "ITEM_PURCHASE", "ITEM", 200L, key);
+
+        // then
+        assertThat(result.getId()).isEqualTo(1000L);
+        assertThat(result.getAmount()).isEqualTo(-150);
+        assertThat(result.getBalanceAfter()).isEqualTo(350);
+        assertThat(result.getIdempotencyKey()).isEqualTo(key);
+
+        verify(walletRepository, never()).findByUserIdForUpdate(any());
+        verify(transactionRepository, never()).save(any());
     }
 
     @Test

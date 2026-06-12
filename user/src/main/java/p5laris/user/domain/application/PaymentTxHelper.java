@@ -38,7 +38,7 @@ public class PaymentTxHelper {
     @Transactional
     public int writePaymentApproval(Long userId, String orderNo, String paymentId, String pgProvider, String payMethod) {
         // 1. 주문 건 재조회
-        PaymentOrder order = orderRepository.findByOrderNo(orderNo)
+        PaymentOrder order = orderRepository.findByOrderNoForUpdate(orderNo)
                 .orElseThrow(() -> new UserException(UserErrorCode.PAYMENT_ORDER_NOT_FOUND));
 
         // 2. 주문 소유주 검증
@@ -93,7 +93,12 @@ public class PaymentTxHelper {
      */
     @Transactional
     public void writePaymentFailure(String orderNo, PaymentStatus status) {
-        orderRepository.findByOrderNo(orderNo).ifPresent(order -> {
+        orderRepository.findByOrderNoForUpdate(orderNo).ifPresent(order -> {
+            if (order.getStatus() != PaymentStatus.READY) {
+                log.info("Payment failure update skipped because order is already processed. orderNo={}, status={}",
+                        orderNo, order.getStatus());
+                return;
+            }
             order.updateStatus(status);
             orderRepository.save(order);
             log.info("Payment status updated to FAILED. orderNo={}", orderNo);
