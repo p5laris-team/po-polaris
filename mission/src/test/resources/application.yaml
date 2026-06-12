@@ -1,0 +1,148 @@
+server:
+  port: 0
+  tomcat:
+    accept-count: 200
+    max-connections: 8192
+
+spring:
+  application:
+    name: mission
+
+  kafka:
+    bootstrap-servers: localhost:9097
+    listener:
+      auto-startup: false
+    consumer:
+      group-id: mission-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        max.block.ms: 1000
+        request.timeout.ms: 1000
+        delivery.timeout.ms: 2000
+      retries: 0
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ""
+      timeout: 200ms
+      repositories:
+        enabled: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/po_mission_test
+    driver-class-name: org.postgresql.Driver
+    username: root
+    password: 12345678
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+grpc:
+  default-deadline-ms: 3000
+  server:
+    port: 0
+    reflection-service-enabled: false
+  client:
+    user:
+      address: static://localhost:9091
+      negotiationType: plaintext
+    character:
+      address: static://localhost:9092
+      negotiationType: plaintext
+    item:
+      address: static://localhost:9093
+      negotiationType: plaintext
+    ai:
+      address: static://localhost:9095
+      negotiationType: plaintext
+    event-log:
+      address: static://localhost:9099
+      negotiationType: plaintext
+    notification:
+      address: static://localhost:9098
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: true
+    token: test-internal-grpc-token
+
+mission:
+  weather:
+    enabled: false
+    provider: kma
+    default-nx: 60
+    default-ny: 127
+    default-location-label: SEOUL
+    timeout-ms: 1500
+    cache-ttl-seconds: 1800
+    redis-cache-enabled: false
+    rate-limit-enabled: false
+    rate-limit-requests-per-minute: 60
+    rate-limit-key-ttl-seconds: 70
+    rate-limit-fail-closed: true
+    kma:
+      base-url: http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
+      service-key: test-key
+  rag:
+    enabled: false
+    embedding-model: gemini-embedding-001
+    embedding-dimension: 768
+    top-k: 5
+    similarity-threshold: 0.72
+    fallback-to-recent-memory: true
+  memory-embedding:
+    enabled: false
+    fixed-delay-ms: 60000
+    initial-delay-ms: 60000
+    batch-size: 20
+    max-attempts: 3
+    processing-timeout-seconds: 60
+    retry-initial-delay-seconds: 60
+    retry-max-delay-seconds: 1800
+  reward-outbox:
+    enabled: false
+    fixed-delay-ms: 60000
+    initial-delay-ms: 60000
+    batch-size: 10
+    max-attempts: 5
+    processing-timeout-seconds: 60
+    retry-initial-delay-seconds: 60
+    retry-max-delay-seconds: 3600
+  reward-wallet:
+    deadline-ms: 1000
+  character-exp:
+    deadline-ms: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
