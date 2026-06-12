@@ -17,6 +17,7 @@ import org.testcontainers.utility.DockerImageName;
         "grpc.client.ai.address=static://localhost:19095",
         "grpc.client.event-log.address=static://localhost:19099",
         "grpc.client.notification.address=static://localhost:19098",
+        "spring.kafka.listener.auto-startup=true",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "spring.task.scheduling.enabled=false",
         "jwt.secret=test-jwt-secret-test-jwt-secret-test-jwt-secret",

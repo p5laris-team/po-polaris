@@ -20,7 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
         "internal.grpc-auth.enabled=true",
         "internal.grpc-auth.token=test-internal-grpc-token"
 })
-class AiApplicationTests {
+class AiApplicationTests extends AiIntegrationTestContainers {
 
     @Test
     void contextLoads() {

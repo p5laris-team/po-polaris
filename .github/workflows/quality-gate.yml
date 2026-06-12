@@ -41,11 +41,13 @@ jobs:
           ./gradlew \
             :user:test \
             --tests "p5laris.user.domain.application.PaymentServiceIdempotencyTest" \
+            --tests "p5laris.user.domain.application.PaymentServiceVerificationTest" \
             --tests "p5laris.user.domain.application.PaymentStateTransitionTest" \
             --tests "p5laris.user.integration.*" \
             --stacktrace
           ./gradlew \
             :mission:test \
+            --tests "p5laris.mission.domain.application.MissionRewardKafkaConsumerTest" \
             --tests "p5laris.mission.domain.application.MissionRewardDispatcherTest" \
             --tests "p5laris.mission.domain.application.time.MissionTimePolicyTest" \
             --stacktrace
