@@ -215,7 +215,10 @@ public class NotificationService {
 
     @Transactional
     public Notification createNotification(com.p5laris.proto.notification.v1.SendPushNotificationRequest request) {
-        return createNotification(request, null);
+        return createNotification(
+                request,
+                request.hasIdempotencyKey() ? request.getIdempotencyKey() : null
+        );
     }
 
     @Transactional

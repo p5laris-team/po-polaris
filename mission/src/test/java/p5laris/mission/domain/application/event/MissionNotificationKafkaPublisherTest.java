@@ -11,7 +11,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,12 +29,14 @@ class MissionNotificationKafkaPublisherTest {
     }
 
     @Test
-    void 미션_제안_알림은_미션_target을_포함해_Kafka로_발행한다() {
+    void 미션_제안_알림은_미션_target과_결정적_멱등키를_포함해_Kafka로_발행한다() {
         publisher.sendMissionOfferNotification(1001L, 2001L, "물 한 잔 마시기");
 
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(kafkaTemplate).send(eq("notification-requests"), anyString(), payloadCaptor.capture());
+        verify(kafkaTemplate).send(eq("notification-requests"), keyCaptor.capture(), payloadCaptor.capture());
 
+        assertThat(keyCaptor.getValue()).isEqualTo("MISSION_OFFER_NOTIFICATION:2001");
         MissionNotificationRequestEvent payload = (MissionNotificationRequestEvent) payloadCaptor.getValue();
         assertThat(payload.userId()).isEqualTo(1001L);
         assertThat(payload.title()).isEqualTo("새 미션이 도착했어요");
@@ -47,7 +48,7 @@ class MissionNotificationKafkaPublisherTest {
 
     @Test
     void Kafka_발행이_실패해도_예외를_전파하지_않는다() {
-        when(kafkaTemplate.send(eq("notification-requests"), anyString(), any()))
+        when(kafkaTemplate.send(eq("notification-requests"), eq("MISSION_REWARD_RECOVERED_NOTIFICATION:2001"), any()))
                 .thenThrow(new RuntimeException("kafka unavailable"));
 
         assertThatCode(() -> publisher.sendMissionRewardRecoveredNotification(1001L, 2001L, 10))

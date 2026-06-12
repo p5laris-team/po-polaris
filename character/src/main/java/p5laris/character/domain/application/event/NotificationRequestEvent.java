@@ -4,6 +4,8 @@ public record NotificationRequestEvent(
         Long userId,
         String title,
         String body,
-        String notificationType
+        String notificationType,
+        String targetType,
+        Long targetId
 ) {
 }
