@@ -29,7 +29,7 @@ public class CharacterProfileClient {
      *
      * 예: NOVA, MUMU, JJORY. 요청 characterId와 활성 캐릭터 ID가 다르면 잘못된 말투를 붙이지 않기 위해 비어 있는 결과를 반환한다.
      */
-    public Optional<String> findActiveCharacterTypeCode(Long userId, Long characterId) {
+    public Optional<CharacterProfileSnapshot> findActiveCharacterProfile(Long userId, Long characterId) {
         try {
             GetMyCharacterResponse response = characterStub.getMyCharacter(
                     GetMyCharacterRequest.newBuilder()
@@ -42,7 +42,10 @@ public class CharacterProfileClient {
             if (!Objects.equals(response.getId(), characterId)) {
                 return Optional.empty();
             }
-            return Optional.of(response.getCharacterTypeCode());
+            return Optional.of(new CharacterProfileSnapshot(
+                    response.getCharacterTypeCode(),
+                    response.getName()
+            ));
         } catch (StatusRuntimeException e) {
             log.warn("활성 캐릭터 프로필 조회 실패. userId={}, status={}",
                     userId, e.getStatus().getCode(), e);
@@ -51,5 +54,11 @@ public class CharacterProfileClient {
             log.warn("활성 캐릭터 프로필 조회 실패. userId={}", userId, e);
             return Optional.empty();
         }
+    }
+
+    public record CharacterProfileSnapshot(
+            String characterTypeCode,
+            String characterName
+    ) {
     }
 }

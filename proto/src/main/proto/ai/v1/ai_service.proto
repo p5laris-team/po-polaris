@@ -11,6 +11,8 @@ service AiService {
   rpc GenerateMissionTexts(GenerateMissionTextsRequest) returns (GenerateMissionTextsResponse);
   rpc GenerateTextEmbedding(GenerateTextEmbeddingRequest) returns (GenerateTextEmbeddingResponse);
   rpc StreamCharacterTalk(StreamCharacterTalkRequest) returns (stream StreamCharacterTalkResponse);
+  rpc GetCharacterTalkMessages(GetCharacterTalkMessagesRequest) returns (GetCharacterTalkMessagesResponse);
+  rpc GetCharacterTalkDiaries(GetCharacterTalkDiariesRequest) returns (GetCharacterTalkDiariesResponse);
 }
 
 message PingPongRequest {
@@ -44,6 +46,7 @@ message GenerateMissionTextsRequest {
   string onboarding_context_json = 12;
   string recent_mission_context_json = 13;
   string request_id = 14;
+  string character_name = 15;
 }
 
 message GenerateMissionTextsResponse {
@@ -103,6 +106,50 @@ message StreamCharacterTalkResponse {
   optional int32 actual_completion_tokens = 12;
   optional int32 actual_total_tokens = 13;
   int32 memory_hit_count = 14;
+}
+
+message GetCharacterTalkMessagesRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string date = 3;
+}
+
+message CharacterTalkMessageItem {
+  string role = 1;
+  string content = 2;
+  int32 sequence = 3;
+  string request_id = 4;
+  bool fallback_used = 5;
+  string created_at = 6;
+  string session_id = 7;
+}
+
+message GetCharacterTalkMessagesResponse {
+  int64 character_id = 1;
+  string date = 2;
+  string latest_session_id = 3;
+  repeated CharacterTalkMessageItem messages = 4;
+}
+
+message GetCharacterTalkDiariesRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string from_date = 3;
+  string to_date = 4;
+}
+
+message CharacterTalkDiaryItem {
+  string date = 1;
+  string summary = 2;
+  int64 source_session_id = 3;
+  string created_at = 4;
+}
+
+message GetCharacterTalkDiariesResponse {
+  int64 character_id = 1;
+  string from_date = 2;
+  string to_date = 3;
+  repeated CharacterTalkDiaryItem items = 4;
 }
 
 enum CharacterTalkStreamEventType {

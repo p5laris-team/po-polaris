@@ -4,11 +4,14 @@ import com.p5laris.proto.ai.v1.AiServiceGrpc;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsRequest;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsResponse;
 import io.grpc.StatusRuntimeException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
+import p5laris.mission.domain.infrastructure.config.MissionAiTextProperties;
 
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 /**
  * mission 모듈에서 ai 모듈의 GenerateMissionTexts gRPC를 호출하는 adapter다.
@@ -18,7 +21,10 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AiMissionTextClient {
+
+    private final MissionAiTextProperties properties;
 
     @GrpcClient("ai")
     private AiServiceGrpc.AiServiceBlockingStub aiStub;
@@ -30,11 +36,12 @@ public class AiMissionTextClient {
      */
     public Optional<AiMissionTextResult> generateMissionTexts(AiMissionTextRequest request) {
         try {
-            GenerateMissionTextsResponse response = aiStub.generateMissionTexts(
+            GenerateMissionTextsResponse response = deadlineAiStub().generateMissionTexts(
                     GenerateMissionTextsRequest.newBuilder()
                             .setUserId(request.userId())
                             .setCharacterId(request.characterId())
                             .setCharacterType(request.characterType())
+                            .setCharacterName(request.characterName())
                             .setMissionTemplateId(request.missionTemplateId())
                             .setBaseTitle(request.baseTitle())
                             .setBaseDescription(request.baseDescription())
@@ -69,5 +76,9 @@ public class AiMissionTextClient {
             log.warn("AI 자율 미션 후보 생성 실패. requestId={}", request.requestId(), e);
             return Optional.empty();
         }
+    }
+
+    private AiServiceGrpc.AiServiceBlockingStub deadlineAiStub() {
+        return aiStub.withDeadlineAfter(properties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }

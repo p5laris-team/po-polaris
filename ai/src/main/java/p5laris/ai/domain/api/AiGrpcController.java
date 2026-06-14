@@ -3,7 +3,13 @@ package p5laris.ai.domain.api;
 import com.p5laris.proto.ai.v1.AiErrorType;
 import com.p5laris.proto.ai.v1.AiGenerationStatus;
 import com.p5laris.proto.ai.v1.AiServiceGrpc;
+import com.p5laris.proto.ai.v1.CharacterTalkDiaryItem;
+import com.p5laris.proto.ai.v1.CharacterTalkMessageItem;
 import com.p5laris.proto.ai.v1.CharacterTalkStreamEventType;
+import com.p5laris.proto.ai.v1.GetCharacterTalkDiariesRequest;
+import com.p5laris.proto.ai.v1.GetCharacterTalkDiariesResponse;
+import com.p5laris.proto.ai.v1.GetCharacterTalkMessagesRequest;
+import com.p5laris.proto.ai.v1.GetCharacterTalkMessagesResponse;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsRequest;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsResponse;
 import com.p5laris.proto.ai.v1.GenerateTextEmbeddingRequest;
@@ -21,7 +27,10 @@ import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.ai.domain.application.AiCharacterTalkService;
 import p5laris.ai.domain.application.AiMissionTextService;
 import p5laris.ai.domain.application.AiTextEmbeddingService;
+import p5laris.ai.domain.application.CharacterTalkHistoryService;
+import p5laris.ai.domain.application.dto.CharacterTalkDiariesResult;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.CharacterTalkMessagesResult;
 import p5laris.ai.domain.application.dto.CharacterTalkStreamMetadata;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
@@ -48,6 +57,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
     private final AiMissionTextService aiMissionTextService;
     private final AiTextEmbeddingService aiTextEmbeddingService;
     private final AiCharacterTalkService aiCharacterTalkService;
+    private final CharacterTalkHistoryService characterTalkHistoryService;
 
     // AI gRPC 서버가 살아 있는지 확인하는 단순 헬스체크 메서드다.
     @Override
@@ -117,12 +127,58 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         }
     }
 
+    // 오늘 또는 특정 날짜의 별친구 원문 대화를 조회한다.
+    @Override
+    public void getCharacterTalkMessages(
+            GetCharacterTalkMessagesRequest request,
+            StreamObserver<GetCharacterTalkMessagesResponse> responseObserver
+    ) {
+        try {
+            CharacterTalkMessagesResult result = characterTalkHistoryService.getDailyMessages(
+                    request.getUserId(),
+                    request.getCharacterId(),
+                    request.getDate()
+            );
+            responseObserver.onNext(toResponse(result));
+            responseObserver.onCompleted();
+        } catch (AiException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
+        } catch (Exception e) {
+            log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "getCharacterTalkMessages", e);
+            responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
+        }
+    }
+
+    // 날짜 범위의 별친구 대화 요약 기록을 조회한다.
+    @Override
+    public void getCharacterTalkDiaries(
+            GetCharacterTalkDiariesRequest request,
+            StreamObserver<GetCharacterTalkDiariesResponse> responseObserver
+    ) {
+        try {
+            CharacterTalkDiariesResult result = characterTalkHistoryService.getDiaries(
+                    request.getUserId(),
+                    request.getCharacterId(),
+                    request.getFromDate(),
+                    request.getToDate()
+            );
+            responseObserver.onNext(toResponse(result));
+            responseObserver.onCompleted();
+        } catch (AiException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
+        } catch (Exception e) {
+            log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "getCharacterTalkDiaries", e);
+            responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
+        }
+    }
+
     // proto request는 내부 계층에 직접 넘기지 않고 command로 변환한다.
     private MissionTextGenerationCommand toCommand(GenerateMissionTextsRequest request) {
         return new MissionTextGenerationCommand(
                 request.getUserId(),
                 request.getCharacterId(),
                 request.getCharacterType(),
+                request.getCharacterName(),
                 request.getMissionTemplateId(),
                 request.getBaseTitle(),
                 request.getBaseDescription(),
@@ -191,6 +247,53 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
                 .setDimension(result.dimension())
                 .addAllValues(result.values())
                 .setRequestId(result.requestId())
+                .build();
+    }
+
+    private GetCharacterTalkMessagesResponse toResponse(CharacterTalkMessagesResult result) {
+        return GetCharacterTalkMessagesResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setDate(result.date().toString())
+                .setLatestSessionId(result.latestSessionId())
+                .addAllMessages(result.messages().stream()
+                        .map(this::toProtoMessageItem)
+                        .toList())
+                .build();
+    }
+
+    private CharacterTalkMessageItem toProtoMessageItem(
+            p5laris.ai.domain.application.dto.CharacterTalkMessageItem item
+    ) {
+        return CharacterTalkMessageItem.newBuilder()
+                .setRole(item.role())
+                .setContent(item.content())
+                .setSequence(item.sequence())
+                .setRequestId(item.requestId())
+                .setFallbackUsed(item.fallbackUsed())
+                .setCreatedAt(item.createdAt() != null ? item.createdAt().toString() : "")
+                .setSessionId(item.sessionId())
+                .build();
+    }
+
+    private GetCharacterTalkDiariesResponse toResponse(CharacterTalkDiariesResult result) {
+        return GetCharacterTalkDiariesResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setFromDate(result.fromDate().toString())
+                .setToDate(result.toDate().toString())
+                .addAllItems(result.items().stream()
+                        .map(this::toProtoDiaryItem)
+                        .toList())
+                .build();
+    }
+
+    private CharacterTalkDiaryItem toProtoDiaryItem(
+            p5laris.ai.domain.application.dto.CharacterTalkDiaryItem item
+    ) {
+        return CharacterTalkDiaryItem.newBuilder()
+                .setDate(item.date().toString())
+                .setSummary(item.summary())
+                .setSourceSessionId(item.sourceSessionId())
+                .setCreatedAt(item.createdAt() != null ? item.createdAt().toString() : "")
                 .build();
     }
 

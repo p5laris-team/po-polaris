@@ -7,16 +7,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.ai.domain.application.dto.CharacterTalkDiariesResult;
+import p5laris.ai.domain.application.dto.CharacterTalkDiaryItem;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.CharacterTalkMessageItem;
+import p5laris.ai.domain.application.dto.CharacterTalkMessagesResult;
 import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
 import p5laris.ai.domain.application.dto.TextEmbeddingCommand;
 import p5laris.ai.domain.application.dto.TextEmbeddingResult;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.memory.CharacterTalkDiarySummary;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
+import p5laris.ai.domain.application.memory.CharacterTalkSessionSummary;
 import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.entity.CharacterTalkMessage;
 import p5laris.ai.domain.domain.entity.CharacterTalkSession;
-import p5laris.ai.domain.domain.enums.CharacterTalkMessageRole;
 import p5laris.ai.domain.domain.enums.CharacterTalkSessionStatus;
 import p5laris.ai.domain.domain.repository.CharacterTalkMessageRepository;
 import p5laris.ai.domain.domain.repository.CharacterTalkSessionRepository;
@@ -26,7 +31,10 @@ import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.config.AiEmbeddingProperties;
 import p5laris.ai.domain.infrastructure.repository.CharacterTalkMemoryJdbcRepository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -45,11 +53,13 @@ import java.util.UUID;
 @Slf4j
 public class CharacterTalkHistoryService {
 
-    private static final int SUMMARY_MAX_LENGTH = 700;
+    private static final int MAX_DIARY_RANGE_DAYS = 31;
 
     private final CharacterTalkSessionRepository sessionRepository;
     private final CharacterTalkMessageRepository messageRepository;
     private final CharacterTalkMemoryJdbcRepository memoryJdbcRepository;
+    private final CharacterTalkMessageWriter messageWriter;
+    private final CharacterTalkSessionSummarizer sessionSummarizer;
     private final AiTextEmbeddingService textEmbeddingService;
     private final AiCharacterTalkProperties properties;
     private final AiEmbeddingProperties embeddingProperties;
@@ -68,7 +78,7 @@ public class CharacterTalkHistoryService {
         String historyJson = toHistoryJson(previousMessages);
         String memoryJson = toMemoryJson(memoryHits);
 
-        recordUserMessage(session, command, now, nextExpiresAt);
+        messageWriter.recordUserMessage(session.getId(), command, now, nextExpiresAt);
 
         return new PreparedCharacterTalkContext(
                 session,
@@ -83,7 +93,6 @@ public class CharacterTalkHistoryService {
         );
     }
 
-    @Transactional
     public void recordAssistantResponse(
             PreparedCharacterTalkContext context,
             CharacterTalkGenerationCommand command,
@@ -95,45 +104,79 @@ public class CharacterTalkHistoryService {
             return;
         }
 
-        CharacterTalkSession session = sessionRepository.findById(context.session().getId())
-                .orElse(null);
-        if (session == null) {
-            return;
-        }
-
-        CharacterTalkMessage assistantMessage = CharacterTalkMessage.create(
-                session,
-                CharacterTalkMessageRole.ASSISTANT,
-                trimForStorage(assistantText),
-                session.nextSequence(),
-                command.requestId(),
-                fallbackUsed
+        messageWriter.recordAssistantResponse(
+                context.session().getId(),
+                command,
+                assistantText,
+                fallbackUsed,
+                tokenUsage
         );
-        session.recordAssistantMessage(
-                tokenUsage != null ? tokenUsage.promptTokens() : null,
-                tokenUsage != null ? tokenUsage.completionTokens() : null,
-                tokenUsage != null ? tokenUsage.totalTokens() : null
-        );
-        messageRepository.save(assistantMessage);
-        sessionRepository.save(session);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
+    public CharacterTalkMessagesResult getDailyMessages(Long userId, Long characterId, String dateText) {
+        LocalDate date = parseDateOrDefault(dateText, LocalDate.now());
+        LocalDateTime startAt = date.atStartOfDay();
+        LocalDateTime endAt = date.plusDays(1).atStartOfDay();
+        List<CharacterTalkMessage> messages = messageRepository.findDailyMessages(
+                userId,
+                characterId,
+                startAt,
+                endAt
+        );
+        List<CharacterTalkMessageItem> items = messages.stream()
+                .map(this::toMessageItem)
+                .toList();
+        String latestSessionId = messages.isEmpty()
+                ? ""
+                : messages.get(messages.size() - 1).getSession().getSessionId();
+        return new CharacterTalkMessagesResult(characterId, date, latestSessionId, items);
+    }
+
+    @Transactional(readOnly = true)
+    public CharacterTalkDiariesResult getDiaries(
+            Long userId,
+            Long characterId,
+            String fromDateText,
+            String toDateText
+    ) {
+        LocalDate toDate = parseDateOrDefault(toDateText, LocalDate.now());
+        LocalDate fromDate = parseDateOrDefault(fromDateText, toDate.minusDays(6));
+        if (fromDate.isAfter(toDate)) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
+        if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_DIARY_RANGE_DAYS) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
+
+        List<CharacterTalkDiaryItem> items = memoryJdbcRepository
+                .findDiarySummaries(userId, characterId, fromDate, toDate)
+                .stream()
+                .map(this::toDiaryItem)
+                .toList();
+        return new CharacterTalkDiariesResult(characterId, fromDate, toDate, items);
+    }
+
     public void cleanupExpiredData() {
         if (!properties.isCleanupEnabled()) {
             return;
         }
 
-        LocalDateTime messageCutoff = LocalDateTime.now().minusHours(properties.normalizedMessageRetentionHours());
-        LocalDateTime sessionCutoff = LocalDateTime.now().minusDays(properties.normalizedSessionRetentionDays());
-        int deletedMessages = messageRepository.deleteMessagesBefore(messageCutoff);
+        LocalDateTime now = LocalDateTime.now();
+        int summarizedSessions = summarizeExpiredSessions(now);
+        LocalDateTime messageCutoff = now.minusHours(properties.normalizedMessageRetentionHours());
+        LocalDateTime sessionCutoff = now.minusDays(properties.normalizedSessionRetentionDays());
+        int deletedMessages = messageRepository.deleteMessagesBefore(
+                messageCutoff,
+                CharacterTalkSessionStatus.ACTIVE
+        );
         int deletedSessions = sessionRepository.deleteClosedSessionsBefore(
                 CharacterTalkSessionStatus.ACTIVE,
                 sessionCutoff
         );
-        if (deletedMessages > 0 || deletedSessions > 0) {
-            log.info("별친구 대화 보관 정책 정리 완료. deletedMessages={}, deletedSessions={}",
-                    deletedMessages, deletedSessions);
+        if (summarizedSessions > 0 || deletedMessages > 0 || deletedSessions > 0) {
+            log.info("별친구 대화 보관 정책 정리 완료. summarizedSessions={}, deletedMessages={}, deletedSessions={}",
+                    summarizedSessions, deletedMessages, deletedSessions);
         }
     }
 
@@ -144,24 +187,41 @@ public class CharacterTalkHistoryService {
                         command.characterId(),
                         CharacterTalkSessionStatus.ACTIVE,
                         now
-                );
+        );
         for (CharacterTalkSession session : sessions) {
-            summarizeSession(command, session);
+            summarizeSession(session);
         }
     }
 
-    private void summarizeSession(CharacterTalkGenerationCommand command, CharacterTalkSession session) {
+    private int summarizeExpiredSessions(LocalDateTime now) {
+        List<CharacterTalkSession> sessions = sessionRepository
+                .findTop10ByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+                        CharacterTalkSessionStatus.ACTIVE,
+                        now
+                );
+        int summarized = 0;
+        for (CharacterTalkSession session : sessions) {
+            if (summarizeSession(session)) {
+                summarized += 1;
+            }
+        }
+        return summarized;
+    }
+
+    private boolean summarizeSession(CharacterTalkSession session) {
         try {
             List<CharacterTalkMessage> messages = messageRepository.findBySessionIdOrderBySequenceAsc(session.getId());
-            String summary = buildSummary(messages);
+            CharacterTalkSessionSummary summary = sessionSummarizer.summarize(session, messages);
             if (summary.isBlank()) {
                 markExpired(session);
-                return;
+                return false;
             }
 
+            String contextSummary = summary.resolvedContextSummary();
+            String diaryText = summary.resolvedDiaryText();
             TextEmbeddingResult embedding = textEmbeddingService.generateTextEmbedding(new TextEmbeddingCommand(
-                    command.userId(),
-                    summary,
+                    session.getUserId(),
+                    contextSummary,
                     embeddingProperties.resolvedModel(),
                     embeddingProperties.getDimension(),
                     "character-talk-memory-" + session.getSessionId()
@@ -171,16 +231,19 @@ public class CharacterTalkHistoryService {
                     session.getUserId(),
                     session.getCharacterId(),
                     session.getId(),
-                    summary,
+                    contextSummary,
+                    diaryText,
                     embedding.model(),
                     embedding.dimension(),
                     normalized
             );
             markMemoryReady(session);
+            return true;
         } catch (Exception e) {
             log.warn("별친구 대화 세션 기억화 실패. sessionId={}, characterId={}, 예외클래스={}",
                     session.getSessionId(), session.getCharacterId(), e.getClass().getSimpleName());
             markExpired(session);
+            return false;
         }
     }
 
@@ -247,25 +310,6 @@ public class CharacterTalkHistoryService {
                 expiresAt
         );
         return new SessionResolution(sessionRepository.save(session), true);
-    }
-
-    protected void recordUserMessage(
-            CharacterTalkSession session,
-            CharacterTalkGenerationCommand command,
-            LocalDateTime now,
-            LocalDateTime expiresAt
-    ) {
-        CharacterTalkMessage message = CharacterTalkMessage.create(
-                session,
-                CharacterTalkMessageRole.USER,
-                trimForStorage(command.userMessage()),
-                session.nextSequence(),
-                command.requestId(),
-                false
-        );
-        session.recordUserMessage(now, expiresAt);
-        messageRepository.save(message);
-        sessionRepository.save(session);
     }
 
     private List<CharacterTalkMessage> findPromptWindowMessages(CharacterTalkSession session) {
@@ -335,42 +379,6 @@ public class CharacterTalkHistoryService {
         return toJson(body);
     }
 
-    private String buildSummary(List<CharacterTalkMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("이전 대화 요약: ");
-        messages.stream()
-                .sorted(Comparator.comparingInt(CharacterTalkMessage::getSequence))
-                .limit(12)
-                .forEach(message -> builder
-                        .append(message.getRole() == CharacterTalkMessageRole.USER ? "사용자: " : "별친구: ")
-                        .append(trimForSummary(message.getContent()))
-                        .append(' '));
-        String summary = builder.toString().trim();
-        if (summary.length() <= SUMMARY_MAX_LENGTH) {
-            return summary;
-        }
-        return summary.substring(0, SUMMARY_MAX_LENGTH);
-    }
-
-    private String trimForSummary(String value) {
-        String trimmed = normalizeText(value);
-        if (trimmed.length() <= 120) {
-            return trimmed;
-        }
-        return trimmed.substring(0, 120);
-    }
-
-    private String trimForStorage(String value) {
-        String trimmed = normalizeText(value);
-        if (trimmed.length() <= 2_000) {
-            return trimmed;
-        }
-        return trimmed.substring(0, 2_000);
-    }
-
     private String toJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -385,6 +393,39 @@ public class CharacterTalkHistoryService {
 
     private String normalizeText(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private CharacterTalkMessageItem toMessageItem(CharacterTalkMessage message) {
+        return new CharacterTalkMessageItem(
+                message.getRole().name().toLowerCase(Locale.ROOT),
+                message.getContent(),
+                message.getSequence(),
+                message.getRequestId(),
+                message.isFallbackUsed(),
+                message.getCreatedAt(),
+                message.getSession().getSessionId()
+        );
+    }
+
+    private CharacterTalkDiaryItem toDiaryItem(CharacterTalkDiarySummary summary) {
+        return new CharacterTalkDiaryItem(
+                summary.date(),
+                summary.summary(),
+                summary.sourceSessionId(),
+                summary.createdAt()
+        );
+    }
+
+    private LocalDate parseDateOrDefault(String value, LocalDate defaultDate) {
+        String normalized = normalizeText(value);
+        if (normalized.isBlank()) {
+            return defaultDate;
+        }
+        try {
+            return LocalDate.parse(normalized);
+        } catch (DateTimeParseException e) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
     }
 
     private record SessionResolution(CharacterTalkSession session, boolean newSession) {

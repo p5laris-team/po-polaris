@@ -7,11 +7,19 @@ import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatStreamChunk;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
+import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.enums.AiErrorType;
+import p5laris.ai.domain.domain.enums.PromptCategory;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.tool.CharacterTalkToolsFactory;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -28,13 +36,15 @@ public class GeminiCharacterTalkGenerator {
     private final AiChatClient aiChatClient;
     private final AiCharacterTalkProperties properties;
     private final CharacterTalkToolsFactory characterTalkToolsFactory;
+    private final PromptTemplateService promptTemplateService;
 
     public AiTokenUsage stream(CharacterTalkGenerationCommand command, Consumer<String> chunkConsumer) {
         try {
             TokenUsageCollector usageCollector = new TokenUsageCollector();
+            RenderedPrompt prompt = prompt(command);
             aiChatClient.streamPlainTextWithToolsAndUsage(
-                            systemPrompt(),
-                            userPrompt(command),
+                            prompt.systemPrompt(),
+                            prompt.userPrompt(),
                             characterTalkToolsFactory.create(command)
                     )
                     .toIterable()
@@ -70,6 +80,29 @@ public class GeminiCharacterTalkGenerator {
             return AiErrorType.TIMEOUT;
         }
         return AiErrorType.PROVIDER_ERROR;
+    }
+
+    private RenderedPrompt prompt(CharacterTalkGenerationCommand command) {
+        return promptTemplateService.render(
+                PromptCategory.CHARACTER_TALK,
+                promptVariables(command),
+                new RenderedPrompt(systemPrompt(), userPrompt(command))
+        );
+    }
+
+    private Map<String, Object> promptVariables(CharacterTalkGenerationCommand command) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("maxReplyLength", properties.normalizedMaxReplyLength());
+        variables.put("characterType", safeText(command.characterType()));
+        variables.put("characterName", safeText(command.characterName()));
+        variables.put("interactionType", safeText(command.interactionType()));
+        variables.put("timeContext", timeContext());
+        variables.put("fallbackContextJson", safeText(command.characterContextJson()));
+        variables.put("conversationHistoryJson", safeText(command.conversationHistoryJson()));
+        variables.put("longTermMemoryContextJson", safeText(command.memoryContextJson()));
+        variables.put("userMessage", safeText(command.userMessage()));
+        variables.put("requestId", safeText(command.requestId()));
+        return variables;
     }
 
     private String systemPrompt() {
@@ -145,6 +178,8 @@ public class GeminiCharacterTalkGenerator {
                 캐릭터 타입: %s
                 캐릭터 이름: %s
                 상호작용 타입: %s
+                현재 KST 시간 context:
+                %s
 
                 사용자 대화 입력:
                 %s
@@ -175,6 +210,7 @@ public class GeminiCharacterTalkGenerator {
                 command.characterType(),
                 safeText(command.characterName()),
                 safeText(command.interactionType()),
+                timeContext(),
                 safeText(command.userMessage()),
                 safeText(command.characterContextJson()),
                 safeText(command.conversationHistoryJson()),
@@ -186,7 +222,46 @@ public class GeminiCharacterTalkGenerator {
         if (value == null || value.isBlank()) {
             return "";
         }
-        return value.trim();
+        return softenRoughWords(value.trim());
+    }
+
+    private String softenRoughWords(String value) {
+        String softened = value;
+        softened = softened.replace("제일 진짜 힘 빠졌던", "제일 힘 빠졌던");
+        softened = softened.replaceAll("(?i)(족|좆|ㅈ)같았음", "정말 힘들었음");
+        softened = softened.replaceAll("(?i)(족|좆|ㅈ)같았던", "힘 빠졌던");
+        softened = softened.replaceAll("(?i)(족|좆|ㅈ)같", "진짜 최악");
+        softened = softened.replaceAll("(?i)(씨발|시발|ㅅㅂ)", "너무 화남");
+        softened = softened.replaceAll("(?i)(존나|ㅈㄴ)", "정말");
+        softened = softened.replaceAll("(?i)개같", "너무 힘든");
+        return softened;
+    }
+
+    private String timeContext() {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Seoul"));
+        return """
+                nowKst=%s
+                timeBucket=%s
+                """.formatted(
+                now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                timeBucket(now.getHour())
+        );
+    }
+
+    private String timeBucket(int hour) {
+        if (hour < 5) {
+            return "DAWN";
+        }
+        if (hour < 9) {
+            return "MORNING";
+        }
+        if (hour < 18) {
+            return "DAY";
+        }
+        if (hour < 22) {
+            return "EVENING";
+        }
+        return "LATE_NIGHT";
     }
 
     private static class TokenUsageCollector {

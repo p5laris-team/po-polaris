@@ -92,6 +92,8 @@ internal:
     token: ${INTERNAL_GRPC_AUTH_TOKEN:}
 
 mission:
+  ai-text:
+    deadline-ms: ${MISSION_AI_TEXT_DEADLINE_MS:8000}
   weather:
     enabled: ${MISSION_WEATHER_ENABLED}
     provider: ${MISSION_WEATHER_PROVIDER}

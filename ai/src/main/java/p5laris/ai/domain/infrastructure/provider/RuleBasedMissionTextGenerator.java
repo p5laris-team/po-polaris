@@ -27,7 +27,7 @@ public class RuleBasedMissionTextGenerator implements MissionTextGenerator {
         CharacterToneType toneType = characterTonePolicy.resolve(command.characterType());
         long variationSeed = variationSeed(command);
 
-        return new MissionTextCandidate(
+        MissionTextCandidate candidate = new MissionTextCandidate(
                 command.baseTitle(),
                 command.baseDescription(),
                 toneType.characterMessage(command.baseTitle(), variationSeed),
@@ -35,6 +35,19 @@ public class RuleBasedMissionTextGenerator implements MissionTextGenerator {
                 toneType.completionResponse(variationSeed),
                 command.category(),
                 command.difficulty()
+        );
+        if (toneType != CharacterToneType.MUMU) {
+            return candidate;
+        }
+
+        return new MissionTextCandidate(
+                candidate.title(),
+                candidate.description(),
+                useCharacterName(candidate.characterMessage(), command.characterName()),
+                useCharacterName(candidate.completionQuestion(), command.characterName()),
+                useCharacterName(candidate.completionCharacterResponse(), command.characterName()),
+                candidate.category(),
+                candidate.difficulty()
         );
     }
 
@@ -47,5 +60,28 @@ public class RuleBasedMissionTextGenerator implements MissionTextGenerator {
                 command.missionTemplateId(),
                 command.baseTitle()
         );
+    }
+
+    private String useCharacterName(String value, String characterName) {
+        String name = displayCharacterName(characterName);
+        return value.replace("무무가", name + subjectParticle(name));
+    }
+
+    private String displayCharacterName(String characterName) {
+        if (characterName == null || characterName.isBlank()) {
+            return "무무";
+        }
+        return characterName.trim();
+    }
+
+    private String subjectParticle(String value) {
+        if (value.isBlank()) {
+            return "가";
+        }
+        char last = value.charAt(value.length() - 1);
+        if (last < '가' || last > '힣') {
+            return "가";
+        }
+        return (last - '가') % 28 == 0 ? "가" : "이";
     }
 }
