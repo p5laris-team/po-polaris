@@ -102,6 +102,14 @@ jobs:
             --tests "p5laris.common.tracing.*" \
             --stacktrace
 
+      - name: Run event log Kafka persistence tests
+        run: |
+          ./gradlew \
+            :event-log:test \
+            --tests "p5laris.eventlog.domain.application.*" \
+            --tests "p5laris.eventlog.integration.*" \
+            --stacktrace
+
       - name: Verify JaCoCo baseline
         run: ./gradlew jacocoBaselineVerification --stacktrace
 
