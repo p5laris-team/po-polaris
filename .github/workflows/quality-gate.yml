@@ -85,6 +85,23 @@ jobs:
             --tests "p5laris.character.domain.application.CharacterServiceTest" \
             --stacktrace
 
+      - name: Run gateway rate limit resilience tests
+        run: |
+          ./gradlew \
+            :gateway:test \
+            --tests "p5laris.gateway.domain.character.infrastructure.limit.RedisCharacterTalkDailyLimiterTest" \
+            --stacktrace
+
+      - name: Run internal gRPC security and trace propagation tests
+        run: |
+          ./gradlew \
+            :proto:test \
+            --tests "p5laris.common.security.GrpcInternalAuthClientInterceptorTest" \
+            --tests "p5laris.common.security.GrpcInternalAuthServerInterceptorTest" \
+            :common:test \
+            --tests "p5laris.common.tracing.*" \
+            --stacktrace
+
       - name: Verify JaCoCo baseline
         run: ./gradlew jacocoBaselineVerification --stacktrace
 
