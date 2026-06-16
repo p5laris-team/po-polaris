@@ -31,4 +31,19 @@ public record AiTokenUsage(
     public boolean hasTotalTokens() {
         return totalTokens != null && totalTokens >= 0;
     }
+
+    public int promptTokensOrZero() {
+        return hasPromptTokens() ? promptTokens : 0;
+    }
+
+    public int completionTokensOrZero() {
+        return hasCompletionTokens() ? completionTokens : 0;
+    }
+
+    public int totalTokensOrZero() {
+        if (hasTotalTokens()) {
+            return totalTokens;
+        }
+        return promptTokensOrZero() + completionTokensOrZero();
+    }
 }

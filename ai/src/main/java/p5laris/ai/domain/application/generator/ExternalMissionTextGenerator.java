@@ -14,4 +14,8 @@ public interface ExternalMissionTextGenerator {
     AiProviderType providerType();
 
     MissionTextCandidate generate(MissionTextGenerationCommand command);
+
+    default MissionTextGenerationOutput generateWithUsage(MissionTextGenerationCommand command) {
+        return MissionTextGenerationOutput.withoutUsage(generate(command));
+    }
 }

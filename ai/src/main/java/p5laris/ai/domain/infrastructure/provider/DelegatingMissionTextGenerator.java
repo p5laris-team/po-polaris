@@ -7,6 +7,7 @@ import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiRateLimiter;
 import p5laris.ai.domain.application.generator.ExternalMissionTextGenerator;
 import p5laris.ai.domain.application.generator.MissionTextGenerator;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
@@ -47,10 +48,15 @@ public class DelegatingMissionTextGenerator implements MissionTextGenerator {
 
     @Override
     public MissionTextCandidate generate(MissionTextGenerationCommand command) {
+        return generateWithUsage(command).candidate();
+    }
+
+    @Override
+    public MissionTextGenerationOutput generateWithUsage(MissionTextGenerationCommand command) {
         AiProviderType providerType = aiProviderProperties.providerType();
 
         if (!aiProviderProperties.isExternalEnabled()) {
-            return ruleBasedMissionTextGenerator.generate(command);
+            return MissionTextGenerationOutput.withoutUsage(ruleBasedMissionTextGenerator.generate(command));
         }
 
         ExternalMissionTextGenerator externalGenerator = externalGenerators.get(providerType);
@@ -66,7 +72,7 @@ public class DelegatingMissionTextGenerator implements MissionTextGenerator {
                 providerType,
                 aiProviderProperties.resolvedModel(),
                 command.requestId(),
-                () -> externalGenerator.generate(command)
+                () -> externalGenerator.generateWithUsage(command)
         );
     }
 

@@ -11,6 +11,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.event.AiEventLogEvent;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.AiUsageLog;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
@@ -75,6 +76,7 @@ class AiMissionTextPersistenceServiceTest {
                 "gemini",
                 "gemini-2.5-flash",
                 120,
+                AiTokenUsage.empty(),
                 AiErrorType.PROVIDER_ERROR
         );
 
@@ -93,6 +95,9 @@ class AiMissionTextPersistenceServiceTest {
         assertThat(usageLog.getStatus()).isEqualTo(AiUsageStatus.FALLBACK);
         assertThat(usageLog.getErrorType()).isEqualTo(AiErrorType.PROVIDER_ERROR);
         assertThat(usageLog.getLatencyMs()).isEqualTo(120);
+        assertThat(usageLog.getPromptTokens()).isZero();
+        assertThat(usageLog.getCompletionTokens()).isZero();
+        assertThat(usageLog.getTotalTokens()).isZero();
 
         AiEventLogEvent event = eventCaptor.getValue();
         assertThat(event.eventType()).isEqualTo("AI_FALLBACK_USED");
@@ -134,11 +139,18 @@ class AiMissionTextPersistenceServiceTest {
                 "local",
                 "local-tone-v1",
                 12,
+                new AiTokenUsage(11, 7, 18),
                 null
         );
 
-        verify(aiUsageLogRepository).save(any(AiUsageLog.class));
+        ArgumentCaptor<AiUsageLog> usageCaptor = ArgumentCaptor.forClass(AiUsageLog.class);
+        verify(aiUsageLogRepository).save(usageCaptor.capture());
         verify(eventPublisher, never()).publishEvent(any());
+
+        AiUsageLog usageLog = usageCaptor.getValue();
+        assertThat(usageLog.getPromptTokens()).isEqualTo(11);
+        assertThat(usageLog.getCompletionTokens()).isEqualTo(7);
+        assertThat(usageLog.getTotalTokens()).isEqualTo(18);
 
         // Prometheus Counter 검증
         var counter = meterRegistry.find("ai.generation.requests").counter();

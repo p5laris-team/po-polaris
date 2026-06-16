@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
+import p5laris.ai.domain.application.generator.AiChatResponse;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
@@ -25,7 +28,7 @@ class GeminiMissionTextGeneratorTest {
                         {
                           "title": "물 한 컵 마시기",
                           "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
-                          "characterMessage": "무... 무무... (해석: 무무가 물 한 컵 마셔보자고 하는 것 같아요.)",
+                          "characterMessage": "무... 무무... (해석: 물 한 컵, 나랑 한 번만 해보자.)",
                           "completionQuestion": "마시고 나서 어땠어?",
                           "completionCharacterResponse": "잘했어. 작은 시작을 기억할게.",
                           "category": "BASIC_ROUTINE",
@@ -41,10 +44,39 @@ class GeminiMissionTextGeneratorTest {
         assertThat(candidate.title()).isEqualTo("물 한 컵 마시기");
         assertThat(candidate.description()).contains("물 한 컵");
         assertThat(candidate.characterMessage()).contains("무... 무무...");
+        assertThat(candidate.characterMessage())
+                .contains("(해석:")
+                .doesNotContain("무무가", "무다리가", "하는 것 같아요", "라고 하네요");
         assertThat(candidate.completionQuestion()).isEqualTo("마시고 나서 어땠어?");
         assertThat(candidate.completionCharacterResponse()).contains("작은 시작");
         assertThat(candidate.category()).isEqualTo("BASIC_ROUTINE");
         assertThat(candidate.difficulty()).isEqualTo("EASY");
+    }
+
+    @Test
+    void Gemini_응답의_token_usage를_함께_반환한다() {
+        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
+                new StubAiChatClient("""
+                        {
+                          "title": "물 한 컵 마시기",
+                          "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+                          "characterMessage": "무... 무무... (해석: 물 한 컵, 나랑 한 번만 해보자.)",
+                          "completionQuestion": "마시고 나서 어땠어?",
+                          "completionCharacterResponse": "잘했어. 작은 시작을 기억할게.",
+                          "category": "BASIC_ROUTINE",
+                          "difficulty": "EASY"
+                        }
+                        """, new AiTokenUsage(123, 45, 168)),
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
+        );
+
+        MissionTextGenerationOutput output = generator.generateWithUsage(validCommand());
+
+        assertThat(output.candidate().title()).isEqualTo("물 한 컵 마시기");
+        assertThat(output.tokenUsage().promptTokens()).isEqualTo(123);
+        assertThat(output.tokenUsage().completionTokens()).isEqualTo(45);
+        assertThat(output.tokenUsage().totalTokens()).isEqualTo(168);
     }
 
     @Test
@@ -108,14 +140,18 @@ class GeminiMissionTextGeneratorTest {
                 {
                   "title": "물 한 컵 마시기",
                   "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
-                  "characterMessage": "무우... 무...? (해석: 무무가 물 한 컵 마셔보자고 하는 것 같아요.)",
-                  "completionQuestion": "무...? (해석: 무무가 마시고 나서 어땠는지 궁금해하네요.)",
-                  "completionCharacterResponse": "무...! (해석: 무무가 작은 완료도 충분히 멋졌다고 하는 것 같아요.)",
+                  "characterMessage": "무우... 무...? (해석: 물 한 컵, 지금은 이 정도면 충분해.)",
+                  "completionQuestion": "무...? (해석: 마시고 나서 제일 먼저 든 느낌이 뭐였어?)",
+                  "completionCharacterResponse": "무...! (해석: 봤어. 방금 한 거 작아도 분명히 네가 해낸 거야.)",
                   "category": "BASIC_ROUTINE",
                   "difficulty": "EASY"
                 }
                 """);
-        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(chatClient, new ObjectMapper(), FALLBACK_PROMPTS);
+        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
+                chatClient,
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
+        );
 
         generator.generate(validCommand());
 
@@ -151,23 +187,25 @@ class GeminiMissionTextGeneratorTest {
                 .contains("ragMemories는 현재 후보 미션과 의미적으로 가까운 사용자 기억")
                 .contains("사용자 기억 원문을 그대로 복사하지 말고")
                 .contains("항상 \"(해석: ...)\"")
-                .contains("옆에서 통역해 주는 말투")
+                .contains("통역 설명문이 아니라 캐릭터가 사용자에게 직접 건네는 말")
+                .contains("간접화법은 금지")
                 .contains("괄호 밖에는 \"무\", \"우\", 공백, \".\", \"?\", \"!\", \"…\"만 쓴다")
                 .contains("예시에 나온 행동이나 문장을 실제 미션 후보로 재사용하지 않는다")
                 .contains("MUMU 나쁜 형식: \"무우... 미션 내용을 괄호 밖에 쓰는 무우...?\"")
                 .contains("잘못된 title 형식: \"무우... 무...? (해석: 일반 미션 제목)\"")
-                .contains("MUMU 좋은 형식: \"무우... 무...? (해석: 무무가 실제 제안을 해보자고 하는 것 같아요.)\"")
+                .contains("MUMU 좋은 형식: \"무우... 무...? (해석: 이건 지금 너한테 너무 크지 않을 거야. 한 번만 같이 해보자.)\"")
                 .contains("JJORY는 가볍게 밈스러운 말맛")
                 .contains("논란이 될 수 있는 커뮤니티 은어")
                 .contains("같은 표현을 세 value에 반복하지 않는다")
                 .contains("별조각은 서비스의 보상 화폐")
                 .contains("별조각이라는 단어는 금지")
-                .contains("fallback 미션 제목과 설명은 안전한 seed 기준선")
+                .contains("fallback 미션 제목과 설명은 비상시 사용할 안전 seed")
+                .contains("AI 후보는 fallback과 다른 행동, 다른 category, 다른 수행 방식이어도 된다")
                 .contains("title과 description에 원문을 그대로 복사하지 않는다")
                 .contains("새 미션처럼 느껴지게")
                 .contains("category는 창작 대상이 아니라 로그와 추천 품질")
-                .contains("category는 반드시 fallback category를 유지")
-                .contains("category 변경은 fallback category가 현재 시간대나 사용자 회피 신호와 직접 충돌할 때만 허용")
+                .contains("category는 timeSlotPolicy.blockedCategories, avoidedMissionTags, 최근 거절/싫어요 신호와 직접 충돌하지 않는 범위에서 자율적으로 선택할 수 있다")
+                .contains("category를 변경하면 title과 description도 변경된 category와 명확히 일치해야 한다")
                 .contains("recentMissionContext.recentMissions의 title, category, status")
                 .contains("recentMissionContext.diversityPolicy")
                 .contains("같은 행동군이란 핵심 동사와 핵심 사물이 비슷한 경우")
@@ -179,6 +217,9 @@ class GeminiMissionTextGeneratorTest {
                 .contains("NOVA도 빛/반짝임 표현을 매번 쓰지 않는다")
                 .doesNotContain("반드시 \"무... 무무...\"");
         assertThat(chatClient.userPrompt)
+                .contains("자율 생성 지시")
+                .contains("fallback은 비상용 seed일 뿐")
+                .contains("category, 핵심 행동, 수행 방식을 새로 고를 수 있다")
                 .contains("사용자 기억 context 지시")
                 .contains("환경 context 지시")
                 .contains("날씨 기반 미션을 만들지 않는다")
@@ -190,9 +231,8 @@ class GeminiMissionTextGeneratorTest {
                 .contains("userMemories와 ragMemories의 content")
                 .contains("MISSION_REJECTION과 DISLIKE")
                 .contains("MISSION_COMPLETION과 LIKE")
-                .contains("카테고리 보존 지시")
-                .contains("category는 fallback category를 유지")
-                .contains("category 필드에 fallback category 값을 반드시 쓴다")
+                .contains("fallback category는 참고 기준")
+                .contains("더 맞는 category가 있으면 허용된 category 안에서 바꿀 수 있다")
                 .contains("difficulty도 fallback과 같더라도")
                 .contains("다양화 지시")
                 .contains("recentMissionContext.recentMissions")
@@ -206,7 +246,7 @@ class GeminiMissionTextGeneratorTest {
                 1001L,
                 2001L,
                 "MUMU",
-                "무무",
+                "무다리",
                 3001L,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
@@ -221,11 +261,20 @@ class GeminiMissionTextGeneratorTest {
         );
     }
 
-    private record StubAiChatClient(String content) implements AiChatClient {
+    private record StubAiChatClient(String content, AiTokenUsage tokenUsage) implements AiChatClient {
+
+        private StubAiChatClient(String content) {
+            this(content, AiTokenUsage.empty());
+        }
 
         @Override
         public String call(String systemPrompt, String userPrompt) {
             return content;
+        }
+
+        @Override
+        public AiChatResponse callWithUsage(String systemPrompt, String userPrompt) {
+            return new AiChatResponse(content, tokenUsage);
         }
     }
 

@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiChatResponse;
 import p5laris.ai.domain.application.generator.ExternalMissionTextGenerator;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.enums.AiErrorType;
@@ -41,10 +43,18 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
 
     @Override
     public MissionTextCandidate generate(MissionTextGenerationCommand command) {
+        return generateWithUsage(command).candidate();
+    }
+
+    @Override
+    public MissionTextGenerationOutput generateWithUsage(MissionTextGenerationCommand command) {
         try {
             RenderedPrompt prompt = prompt(command);
-            String content = aiChatClient.call(prompt.systemPrompt(), prompt.userPrompt());
-            return parseCandidate(content, command);
+            AiChatResponse response = aiChatClient.callWithUsage(prompt.systemPrompt(), prompt.userPrompt());
+            return new MissionTextGenerationOutput(
+                    parseCandidate(response.content(), command),
+                    response.tokenUsage()
+            );
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
@@ -161,13 +171,16 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 title과 description은 사용자가 바로 읽는 일반 미션 문장이다. 캐릭터 말투, 감탄사, "(해석: ...)" 형식, "무우...", "무무..." 같은 발화를 절대 쓰지 않는다.
                 캐릭터 말투는 characterMessage, completionQuestion, completionCharacterResponse 세 필드에만 적용한다.
                 사용자 이름, 닉네임, [user], {user}, placeholder 표현은 절대 쓰지 않는다.
+                캐릭터를 지칭해야 하면 캐릭터 타입명이 아니라 "캐릭터 이름" 값을 사용한다.
+                "캐릭터 이름" 값은 별친구 자신의 이름 또는 별명이다. 사용자의 이름이 아니다.
                 사용자의 건강 상태, 위치, 감정 상태를 단정하지 않는다.
                 온보딩 context의 routineGoals, missionPlaceContexts, missionIntensity, avoidedMissionTags를 우선 반영한다.
-                fallback 미션 제목과 설명은 안전한 seed 기준선이다. category와 difficulty 방향은 참고하되 title과 description에 원문을 그대로 복사하지 않는다.
-                fallback 미션과 같은 행동을 유지해야 할 때도 표현, 초점, 수행 방식을 조금 바꿔 새 미션처럼 느껴지게 만든다.
+                출력 형식, 안전, 시간대, 날씨, 회피 태그, 난이도 규칙은 반드시 지킨다. 그 밖의 미션 발상은 사용자의 context에 맞춰 자유롭게 고른다.
+                fallback 미션 제목과 설명은 비상시 사용할 안전 seed다. category와 difficulty 방향은 참고하되 title과 description에 원문을 그대로 복사하지 않는다.
+                AI 후보는 fallback과 다른 행동, 다른 category, 다른 수행 방식이어도 된다. 현재 시간대와 사용자 context에 더 맞으면 적극적으로 바꾼다.
+                fallback 미션과 같은 행동을 유지해야 할 때도 표현, 초점, 수행 방식 중 최소 두 가지를 바꿔 새 미션처럼 느껴지게 만든다.
                 category는 창작 대상이 아니라 로그와 추천 품질을 지키는 분류값이다.
-                fallback category가 timeSlotPolicy.blockedCategories, avoidedMissionTags, 최근 거절/싫어요 신호와 직접 충돌하지 않으면 category는 반드시 fallback category를 유지한다.
-                category 변경은 fallback category가 현재 시간대나 사용자 회피 신호와 직접 충돌할 때만 허용한다.
+                category는 timeSlotPolicy.blockedCategories, avoidedMissionTags, 최근 거절/싫어요 신호와 직접 충돌하지 않는 범위에서 자율적으로 선택할 수 있다.
                 category를 변경하면 title과 description도 변경된 category와 명확히 일치해야 한다.
                 최근 거절/싫어요 미션과 avoidedMissionTags에 직접 충돌하는 미션은 만들지 않는다.
                 recentMissionContext.userMemories는 사용자의 완료 답변과 피드백에서 추출한 참고 맥락이다.
@@ -187,7 +200,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 같은 카테고리를 선택해야 하더라도 핵심 사물, 감각 초점, 수행 방식 중 최소 두 가지를 바꾼다.
                 미션 발상 축을 한쪽으로 몰지 말고 감각 관찰, 호흡, 몸 풀기, 공간 리셋, 한 줄 기록, 물/온도/소리/시선 전환, 준비/마무리 루틴을 고르게 섞는다.
                 category 안에서 새로움을 만든다. BASIC_ROUTINE은 물/창문/세안/호흡/자세/준비물 점검/시작 의식으로, SPACE_RESET은 책상 외에도 가방/침대 가장자리/싱크대 한 칸/바닥 한 점/디지털 알림 정리로, BODY_CARE는 목/어깨/손목/눈/발/허리/호흡 리듬으로, MIND_RECORD는 한 줄 기록/감정 이름 붙이기/오늘의 장면/고마운 것/내일 덜어낼 것/소리 관찰로, REST_RECOVERY는 조명/온도/물 한 모금/눈 쉬기/느린 호흡/잠자리 준비로, SOCIAL_LIGHT는 직접 연락 외에도 감사 떠올리기/보내지 않을 문장 적기/다음에 전할 말 메모로 변주한다.
-                같은 category를 유지해야 할 때는 핵심 사물, 감각 초점, 수행 방식 중 최소 두 가지를 바꿔서 "또 같은 미션"처럼 느껴지지 않게 만든다.
+                같은 category를 유지할 때도 핵심 사물, 감각 초점, 수행 방식 중 최소 두 가지를 바꿔서 "또 같은 미션"처럼 느껴지지 않게 만든다.
                 신박함은 낯선 도구나 큰 행동이 아니라 "작지만 초점이 새롭다"는 느낌이어야 한다. 준비물이 필요하거나 사용자를 당황하게 하는 미션은 만들지 않는다.
                 title과 description에는 "작은", "잠시", "천천히", "빛", "반짝" 같은 단어를 반복해서 쓰지 않는다. 같은 요청 안에서도 같은 수식어를 여러 필드에 반복하지 않는다.
                 NOVA도 빛/반짝임 표현을 매번 쓰지 않는다. 온기, 숨, 고요함, 균형, 여백, 리듬, 맑음 같은 표현을 상황에 맞게 섞되 과장하지 않는다.
@@ -221,13 +234,16 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 난이도 라벨과 실제 행동 강도는 일치해야 한다. 30초짜리 가벼운 동작을 NORMAL이나 CHALLENGE라고 부르지 않는다.
                 NOVA는 느리고 조심스럽고 다정한 별알 말투로 말하며, 작은 빛/별빛 같은 부드러운 이미지를 짧게 쓸 수 있다.
                 MUMU는 "무", "무무", "무우", "무...?", "무...!", "무무무?", "무!" 같은 짧은 발화를 섞고, 항상 "(해석: ...)"을 함께 쓴다.
-                MUMU의 해석 문장은 자막처럼 딱딱한 직역이 아니라 "무무가 ~라고 하네요", "무무가 ~라고 하는 것 같아요", "무무가 ~해요"처럼 옆에서 통역해 주는 말투로 쓴다.
+                MUMU의 해석 문장은 통역 설명문이 아니라 캐릭터가 사용자에게 직접 건네는 말이다.
+                MUMU 해석에서 "[캐릭터 이름]이/가 ~라고 하네요", "[캐릭터 이름]이/가 ~라고 하는 것 같아요", "~궁금해하네요", "~묻고 있어요" 같은 간접화법은 금지한다.
+                MUMU 해석은 "나", "너"를 자연스럽게 써도 된다. 캐릭터를 꼭 지칭해야 할 때만 캐릭터 이름을 사용한다.
                 MUMU의 characterMessage, completionQuestion, completionCharacterResponse는 무무 발화 한 덩어리와 "(해석: ...)" 한 번으로 끝내고, 같은 발화를 세 value에 반복하지 않는다.
                 MUMU는 괄호 밖에 미션 제목이나 한국어 의미 문장을 절대 쓰지 않는다. 괄호 밖에는 "무", "우", 공백, ".", "?", "!", "…"만 쓴다.
                 아래 예시는 형식 설명용이다. 예시에 나온 행동이나 문장을 실제 미션 후보로 재사용하지 않는다.
                 MUMU 나쁜 형식: "무우... 미션 내용을 괄호 밖에 쓰는 무우...?"
-                MUMU 좋은 형식: "무우... 무...? (해석: 무무가 실제 제안을 해보자고 하는 것 같아요.)"
-                MUMU의 completionQuestion도 무무 발화로 시작하되 해석은 "무무가 ~궁금해하네요"처럼 사용자가 짧게 답할 수 있는 질문형으로 쓴다.
+                MUMU 나쁜 형식: "무우... 무...? (해석: 캐릭터가 대신 말해준다고 설명하는 간접화법.)"
+                MUMU 좋은 형식: "무우... 무...? (해석: 이건 지금 너한테 너무 크지 않을 거야. 한 번만 같이 해보자.)"
+                MUMU의 completionQuestion도 무무 발화로 시작하되 해석은 "해보고 나서 제일 먼저 든 느낌이 뭐였어?"처럼 사용자가 짧게 답할 수 있는 직접 질문형으로 쓴다.
                 JJORY는 건조하고 짧은 반말 농담 말투를 사용한다. 존댓말보다 "~임", "~됨", "인정" 같은 짧은 표현을 선호한다.
                 JJORY는 가볍게 밈스러운 말맛을 낼 수 있다. 허용 표현은 "가보자고", "이 정도면 선방", "나쁘지 않음", "작전 성공", "미션 각", "오늘의 나 꽤 괜찮음", "인정" 정도로 제한한다.
                 JJORY의 밈 표현은 한 문구에 하나만 사용하고, 같은 표현을 세 value에 반복하지 않는다.
@@ -264,6 +280,13 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 최근 미션 context JSON:
                 %s
 
+                자율 생성 지시:
+                - fallback은 비상용 seed일 뿐이다. fallback title, description, characterMessage, completionQuestion, completionCharacterResponse를 문장 구조까지 따라 하지 않는다.
+                - 금지/시간대/날씨/난이도/회피 태그 규칙을 지키는 범위에서 category, 핵심 행동, 수행 방식을 새로 고를 수 있다.
+                - 사용자가 최근 싫어했거나 오늘 이미 본 actionFamily는 피하고, 온보딩 목표에 맞는 다른 행동군을 우선 찾는다.
+                - "물 한 컵", "책상 한 구역", "10초 스트레칭"처럼 seed 또는 최근 미션에서 이미 본 행동은 반복하지 않는다.
+                - 제목과 설명은 템플릿 문장처럼 보이지 않게, 지금 사용자의 시간대와 취향에 맞춘 구체적인 한 장면으로 쓴다.
+
                 시간대 정책 지시:
                 - recentMissionContext.environmentContext.currentTimeSlot을 현재 시간대 기준으로 사용한다.
                 - recentMissionContext.environmentContext.timeSlotPolicy.recommendedCategories를 우선 고려한다.
@@ -292,10 +315,8 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 - fallback 미션 제목/설명은 그대로 복사하지 말고, 시간대와 사용자 기억을 반영해 새 표현으로 바꾼다.
 
                 카테고리 보존 지시:
-                - fallback category가 blockedCategories나 회피 신호와 직접 충돌하지 않으면 category는 fallback category를 유지한다.
-                - category를 유지하는 경우에도 반환 JSON의 category 필드에 fallback category 값을 반드시 쓴다.
-                - category를 바꾸는 것은 현재 시간대 또는 회피 신호 때문에 fallback category가 부적절할 때만 허용한다.
-                - category를 유지하되 최근 미션과 겹치지 않도록 핵심 사물, 감각 초점, 수행 방식을 바꾼다.
+                - fallback category는 참고 기준이다. 현재 시간대/온보딩/최근 이력에 더 맞는 category가 있으면 허용된 category 안에서 바꿀 수 있다.
+                - category를 유지하든 바꾸든 최근 미션과 겹치지 않도록 핵심 사물, 감각 초점, 수행 방식을 바꾼다.
                 - difficulty도 fallback과 같더라도 반환 JSON의 difficulty 필드에 반드시 쓴다.
 
                 사용자 기억 context 지시:
@@ -322,6 +343,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 - value 안에 일본어, 중국어, 영어 도움말, "도움이 필요하시면" 같은 보조 문구를 넣지 않는다.
                 - 반환 전 title, description, characterMessage, completionQuestion, completionCharacterResponse, category, difficulty 일곱 key가 모두 있는지 확인한다.
                 - category와 difficulty는 마지막 두 key로 반드시 포함한다.
+                - MUMU의 "(해석: ...)" 안에서는 되도록 캐릭터를 3인칭으로 지칭하지 말고 사용자에게 직접 말한다.
                 {
                   "title": "캐릭터 말투 없이 사용자에게 보여줄 짧은 일반 한국어 미션 제목",
                   "description": "캐릭터 말투 없이 사용자가 바로 실행할 수 있는 일반 한국어 미션 설명",
