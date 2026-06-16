@@ -84,7 +84,10 @@
 ## 🧩 Architecture (MSA)
 
 <p align="center">
-  <img src="" width="100%" alt="Architecture">
+  <img src="docs/images/architecture-2.png" width="80%" alt="Architecture">
+</p>
+<p align="center">
+  <img src="docs/images/architecture-1.png" width="80%" alt="Architecture">
 </p>
 
 ---
