@@ -2,6 +2,7 @@ package p5laris.notification.domain.application;
 
 import com.p5laris.proto.notification.v1.MarkAllNotificationsReadResponse;
 import com.p5laris.proto.notification.v1.SendPushNotificationRequest;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,8 +17,12 @@ import p5laris.notification.domain.domain.entity.Notification;
 import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
 import p5laris.notification.domain.domain.entity.NotificationSetting;
 import p5laris.notification.domain.domain.enums.FcmPlatform;
+import p5laris.notification.domain.domain.enums.FcmTokenDeactivatedReason;
+import p5laris.notification.domain.domain.enums.NotificationTargetType;
 import p5laris.notification.domain.domain.enums.NotificationType;
 import p5laris.notification.domain.domain.enums.PushDeliveryStatus;
+import p5laris.notification.domain.exception.NotificationErrorCode;
+import p5laris.notification.domain.exception.NotificationException;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
 import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
 import p5laris.notification.domain.domain.repository.NotificationRepository;
@@ -28,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -173,5 +179,242 @@ class NotificationServiceTest {
         assertThat(delivery.getFcmDeviceTokenId()).isEqualTo(200L);
         assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.PENDING);
         assertThat(delivery.getNextAttemptAt()).isNotNull();
+    }
+    @Test
+    void registeringDeactivatedToken_reactivatesExistingRow() {
+        FcmDeviceToken existingToken = FcmDeviceToken.builder()
+                .userId(999L)
+                .fcmToken("same-token")
+                .tokenHash("existing-hash")
+                .platform(FcmPlatform.WEB)
+                .build();
+        ReflectionTestUtils.setField(existingToken, "id", 200L);
+        existingToken.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
+        when(fcmDeviceTokenRepository.findByTokenHash(any(String.class)))
+                .thenReturn(Optional.of(existingToken));
+
+        var response = notificationService.registerFcmToken(1001L, "same-token");
+
+        assertThat(response.getId()).isEqualTo(200L);
+        assertThat(existingToken.getUserId()).isEqualTo(1001L);
+        assertThat(existingToken.isActive()).isTrue();
+        assertThat(existingToken.getDeactivatedAt()).isNull();
+        assertThat(existingToken.getDeactivatedReason()).isNull();
+        verify(fcmDeviceTokenRepository, never()).save(any(FcmDeviceToken.class));
+    }
+
+    @Test
+    void registeringBlankToken_rejectsWithoutPersistence() {
+        assertThatThrownBy(() -> notificationService.registerFcmToken(1001L, "  "))
+                .isInstanceOf(NotificationException.class);
+
+        verify(fcmDeviceTokenRepository, never()).findByTokenHash(any());
+        verify(fcmDeviceTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void createNotification_withoutActiveTokens_recordsSkippedDelivery() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(invocation -> {
+            Notification notification = invocation.getArgument(0);
+            ReflectionTestUtils.setField(notification, "id", 100L);
+            return notification;
+        });
+        when(notificationSettingRepository.findByUserId(1001L))
+                .thenReturn(Optional.of(NotificationSetting.defaultSetting(1001L)));
+        when(notificationDeliveryPolicy.decide(any(NotificationSetting.class), eq(NotificationType.MISSION)))
+                .thenReturn(NotificationDeliveryDecision.allowed());
+        when(fcmDeviceTokenRepository.findByUserIdAndActiveTrue(1001L)).thenReturn(List.of());
+
+        notificationService.createNotification(pushRequest, null);
+
+        ArgumentCaptor<NotificationPushDelivery> deliveryCaptor =
+                ArgumentCaptor.forClass(NotificationPushDelivery.class);
+        verify(notificationPushDeliveryRepository).save(deliveryCaptor.capture());
+
+        NotificationPushDelivery delivery = deliveryCaptor.getValue();
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SKIPPED);
+        assertThat(delivery.getFcmDeviceTokenId()).isNull();
+        assertThat(delivery.getErrorCode()).isEqualTo("NO_ACTIVE_TOKENS");
+        assertThat(delivery.getNextAttemptAt()).isNull();
+    }
+
+    @Test
+    void getNotifications_normalizesPageSizeAndBuildsNextCursor() {
+        Notification first = notification(30L, false);
+        Notification second = notification(20L, true);
+        Notification lookahead = notification(10L, false);
+        when(notificationRepository.findByUserIdOrderByIdDesc(eq(1001L), any()))
+                .thenReturn(List.of(first, second, lookahead));
+
+        var response = notificationService.getNotifications(1001L, null, null, 2);
+
+        assertThat(response.getNotificationsCount()).isEqualTo(2);
+        assertThat(response.getNotifications(0).getId()).isEqualTo(30L);
+        assertThat(response.getNotifications(1).getRead()).isTrue();
+        assertThat(response.getPageInfo().getHasNext()).isTrue();
+        assertThat(response.getPageInfo().getNextCursor()).isEqualTo(20L);
+        assertThat(response.getPageInfo().getSize()).isEqualTo(2);
+    }
+
+    @Test
+    void getNotifications_usesReadAndCursorQuery() {
+        when(notificationRepository.findByUserIdAndReadAndIdLessThanOrderByIdDesc(
+                eq(1001L),
+                eq(false),
+                eq(50L),
+                any()
+        )).thenReturn(List.of(notification(40L, false)));
+
+        var response = notificationService.getNotifications(1001L, false, 50L, 100);
+
+        assertThat(response.getNotificationsCount()).isEqualTo(1);
+        assertThat(response.getPageInfo().getHasNext()).isFalse();
+        assertThat(response.getPageInfo().getNextCursor()).isZero();
+        assertThat(response.getPageInfo().getSize()).isEqualTo(50);
+    }
+
+    @Test
+    void getUnreadCount_returnsRepositoryCount() {
+        when(notificationRepository.countByUserIdAndReadFalse(1001L)).thenReturn(7L);
+
+        var response = notificationService.getUnreadNotificationCount(1001L);
+
+        assertThat(response.getUnreadCount()).isEqualTo(7L);
+    }
+
+    @Test
+    void markNotificationRead_canToggleReadState() {
+        Notification notification = notification(100L, false);
+        when(notificationRepository.findByIdAndUserId(100L, 1001L))
+                .thenReturn(Optional.of(notification));
+
+        var readResponse = notificationService.markNotificationRead(1001L, 100L, true);
+        var unreadResponse = notificationService.markNotificationRead(1001L, 100L, false);
+
+        assertThat(readResponse.getRead()).isTrue();
+        assertThat(unreadResponse.getRead()).isFalse();
+        assertThat(notification.isRead()).isFalse();
+    }
+
+    @Test
+    void markNotificationRead_rejectsAnotherUsersNotification() {
+        when(notificationRepository.findByIdAndUserId(100L, 1001L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.markNotificationRead(1001L, 100L, true))
+                .isInstanceOf(NotificationException.class)
+                .extracting("errorCode")
+                .isEqualTo(NotificationErrorCode.NOTIFICATION_NOT_FOUND);
+    }
+
+    @Test
+    void registeringNewToken_hashesAndPersistsToken() {
+        when(fcmDeviceTokenRepository.findByTokenHash(any(String.class)))
+                .thenReturn(Optional.empty());
+        when(fcmDeviceTokenRepository.save(any(FcmDeviceToken.class))).thenAnswer(invocation -> {
+            FcmDeviceToken token = invocation.getArgument(0);
+            ReflectionTestUtils.setField(token, "id", 200L);
+            return token;
+        });
+
+        var response = notificationService.registerFcmToken(1001L, "new-token");
+
+        assertThat(response.getId()).isEqualTo(200L);
+        ArgumentCaptor<FcmDeviceToken> tokenCaptor = ArgumentCaptor.forClass(FcmDeviceToken.class);
+        verify(fcmDeviceTokenRepository).save(tokenCaptor.capture());
+        assertThat(tokenCaptor.getValue().getUserId()).isEqualTo(1001L);
+        assertThat(tokenCaptor.getValue().getFcmToken()).isEqualTo("new-token");
+        assertThat(tokenCaptor.getValue().getTokenHash()).hasSize(64);
+        assertThat(tokenCaptor.getValue().isActive()).isTrue();
+    }
+
+    @Test
+    void notificationSetting_defaultsAndUpdatesQuietHours() {
+        when(notificationSettingRepository.findByUserId(1001L))
+                .thenReturn(Optional.empty());
+
+        var defaultResponse = notificationService.getNotificationSetting(1001L);
+
+        assertThat(defaultResponse.getSetting().getPushEnabled()).isTrue();
+        assertThat(defaultResponse.getSetting().getQuietHoursStart()).isEqualTo("22:00");
+        assertThat(defaultResponse.getSetting().getQuietHoursEnd()).isEqualTo("08:00");
+
+        UpdateNotificationSettingRequest request = UpdateNotificationSettingRequest.newBuilder()
+                .setPushEnabled(false)
+                .setMissionOfferEnabled(false)
+                .setCharacterStateEnabled(true)
+                .setDailyReminderEnabled(false)
+                .setQuietHoursEnabled(true)
+                .setQuietHoursStart("23:30")
+                .setQuietHoursEnd("07:15")
+                .build();
+        when(notificationSettingRepository.save(any(NotificationSetting.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var updated = notificationService.updateNotificationSetting(1001L, request);
+
+        assertThat(updated.getSetting().getPushEnabled()).isFalse();
+        assertThat(updated.getSetting().getMissionOfferEnabled()).isFalse();
+        assertThat(updated.getSetting().getQuietHoursEnabled()).isTrue();
+        assertThat(updated.getSetting().getQuietHoursStart()).isEqualTo("23:30");
+        assertThat(updated.getSetting().getQuietHoursEnd()).isEqualTo("07:15");
+    }
+
+    @Test
+    void updateNotificationSetting_rejectsInvalidQuietHours() {
+        UpdateNotificationSettingRequest request = UpdateNotificationSettingRequest.newBuilder()
+                .setQuietHoursStart("25:00")
+                .setQuietHoursEnd("08:00")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.updateNotificationSetting(1001L, request))
+                .isInstanceOf(NotificationException.class)
+                .extracting("errorCode")
+                .isEqualTo(NotificationErrorCode.INVALID_NOTIFICATION_REQUEST);
+
+        verify(notificationSettingRepository, never()).save(any());
+    }
+
+    @Test
+    void createNotification_whenPolicyBlocks_recordsPolicySkipReason() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(invocation -> {
+            Notification notification = invocation.getArgument(0);
+            ReflectionTestUtils.setField(notification, "id", 100L);
+            return notification;
+        });
+        when(notificationSettingRepository.findByUserId(1001L))
+                .thenReturn(Optional.of(NotificationSetting.defaultSetting(1001L)));
+        when(notificationDeliveryPolicy.decide(any(NotificationSetting.class), eq(NotificationType.MISSION)))
+                .thenReturn(NotificationDeliveryDecision.skipped(
+                        "MISSION_OFFER_DISABLED",
+                        "User disabled mission offers"
+                ));
+
+        notificationService.createNotification(pushRequest, null);
+
+        ArgumentCaptor<NotificationPushDelivery> deliveryCaptor =
+                ArgumentCaptor.forClass(NotificationPushDelivery.class);
+        verify(notificationPushDeliveryRepository).save(deliveryCaptor.capture());
+        assertThat(deliveryCaptor.getValue().getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SKIPPED);
+        assertThat(deliveryCaptor.getValue().getErrorCode()).isEqualTo("MISSION_OFFER_DISABLED");
+        verify(fcmDeviceTokenRepository, never()).findByUserIdAndActiveTrue(any());
+    }
+
+    private Notification notification(Long id, boolean read) {
+        Notification notification = Notification.builder()
+                .userId(1001L)
+                .notificationType(NotificationType.MISSION)
+                .title("title-" + id)
+                .message("message-" + id)
+                .targetType(NotificationTargetType.MISSION)
+                .targetId(900L)
+                .pushRequired(true)
+                .build();
+        ReflectionTestUtils.setField(notification, "id", id);
+        ReflectionTestUtils.setField(notification, "createdAt", LocalDateTime.of(2026, 6, 12, 12, 0));
+        if (read) {
+            notification.markRead();
+        }
+        return notification;
     }
 }

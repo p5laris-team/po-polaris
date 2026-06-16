@@ -1,0 +1,1459 @@
+{
+  "templateVersion": "1.1.0",
+  "templateName": "Polaris Metabase 반짝 비즈니스 리포트",
+  "createdFor": "Polaris 운영 로그 기반 비즈니스/마케팅 분석",
+  "createdAt": "2026-06-09",
+  "importMode": "metabase-api",
+  "importantNote": "Metabase 공식 serialization import는 Pro/Enterprise 기능이며 YAML/tgz 기반이다. 이 JSON은 무료 self-host Metabase에서도 쓸 수 있도록 Metabase HTTP API로 collection, question(card), dashboard를 생성하는 템플릿이다.",
+  "collection": {
+    "name": "📊 Polaris 반짝 분석실",
+    "description": "Polaris event-log, user, ai DB를 기반으로 DAU, 첫 경험, 미션 흐름, 공유, 상점, 별조각 경제, AI 품질을 한눈에 보는 비즈니스/마케팅 분석 공간",
+    "color": "#509EE3"
+  },
+  "databaseKeys": {
+    "eventLog": {
+      "env": "EVENT_LOG_DATABASE_ID",
+      "preferredNames": [
+        "Polaris Event Log",
+        "event_log",
+        "event-log",
+        "Event Log"
+      ],
+      "description": "event_logs와 v_daily_user_activity, v_daily_mission_funnel, v_daily_share_store_activity가 있는 DB"
+    },
+    "users": {
+      "env": "USERS_DATABASE_ID",
+      "preferredNames": [
+        "Polaris User Analytics",
+        "users",
+        "Users"
+      ],
+      "description": "v_daily_wallet_economy가 있는 DB"
+    },
+    "ai": {
+      "env": "AI_DATABASE_ID",
+      "preferredNames": [
+        "Polaris AI Analytics",
+        "ai",
+        "AI"
+      ],
+      "description": "v_daily_ai_quality가 있는 DB"
+    }
+  },
+  "cards": [
+    {
+      "key": "latest_dau",
+      "name": "👥 오늘의 반짝 사용자",
+      "description": "가장 최근 날짜의 활성 사용자 수. 서비스가 오늘 얼마나 살아 움직였는지 보는 첫 번째 숫자다.",
+      "databaseKey": "eventLog",
+      "display": "scalar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(dau, 0) AS dau",
+        "FROM v_daily_user_activity",
+        "ORDER BY active_date DESC",
+        "LIMIT 1;"
+      ],
+      "visualizationSettings": {
+        "scalar.field": "dau",
+        "column_settings": {
+          "[\"name\",\"dau\"]": {
+            "number_style": "decimal"
+          }
+        }
+      }
+    },
+    {
+      "key": "latest_new_users",
+      "name": "✨ 새 친구 가입",
+      "description": "가장 최근 날짜의 신규 가입 사용자 수. 새 사용자가 들어오는 흐름을 귀엽지만 진지하게 확인한다.",
+      "databaseKey": "eventLog",
+      "display": "scalar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(new_users, 0) AS new_users",
+        "FROM v_daily_user_activity",
+        "ORDER BY active_date DESC",
+        "LIMIT 1;"
+      ],
+      "visualizationSettings": {
+        "scalar.field": "new_users"
+      }
+    },
+    {
+      "key": "latest_core_action_users",
+      "name": "🔥 핵심 행동 친구들",
+      "description": "미션 제안/완료/공유 등 핵심 행동을 한 사용자 수. 단순 방문보다 서비스 가치를 실제로 써 본 사람에 가깝다.",
+      "databaseKey": "eventLog",
+      "display": "scalar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(core_action_users, 0) AS core_action_users",
+        "FROM v_daily_user_activity",
+        "ORDER BY active_date DESC",
+        "LIMIT 1;"
+      ],
+      "visualizationSettings": {
+        "scalar.field": "core_action_users"
+      }
+    },
+    {
+      "key": "latest_mission_completion_rate",
+      "name": "🎯 미션 성공 온도",
+      "description": "미션 제안 대비 완료 비율. 추천이 사용자에게 잘 맞는지, 미션이 너무 부담스럽지는 않은지 보는 온도계다.",
+      "databaseKey": "eventLog",
+      "display": "scalar",
+      "sql": [
+        "SELECT",
+        "  ROUND(",
+        "    mission_completed_events::numeric",
+        "    / NULLIF(mission_offered_events, 0) * 100,",
+        "    2",
+        "  ) AS mission_completion_rate_percent",
+        "FROM v_daily_mission_funnel",
+        "ORDER BY active_date DESC",
+        "LIMIT 1;"
+      ],
+      "visualizationSettings": {
+        "scalar.field": "mission_completion_rate_percent",
+        "column_settings": {
+          "[\"name\",\"mission_completion_rate_percent\"]": {
+            "suffix": "%",
+            "decimals": 2
+          }
+        }
+      }
+    },
+    {
+      "key": "dau_growth_trend",
+      "name": "📈 사용자 성장 산책길",
+      "description": "DAU, 신규 가입, 핵심 행동 사용자가 함께 걷는 추이를 본다. 유입만 늘고 핵심 행동이 멈추면 산책길이 끊긴 것이다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  dau,",
+        "  new_users,",
+        "  core_action_users",
+        "FROM v_daily_user_activity",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "dau",
+          "new_users",
+          "core_action_users"
+        ],
+        "graph.x_axis.title_text": "날짜",
+        "graph.y_axis.title_text": "사용자 수"
+      }
+    },
+    {
+      "key": "activation_funnel_daily",
+      "name": "🚀 첫 경험 계단",
+      "description": "온보딩 완료, 캐릭터 생성, 미션 제안, 미션 완료까지 사용자가 한 계단씩 올라가는지 본다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  onboarding_completed_events,",
+        "  character_created_events,",
+        "  mission_offered_events,",
+        "  mission_completed_events",
+        "FROM v_daily_mission_funnel",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "onboarding_completed_events",
+          "character_created_events",
+          "mission_offered_events",
+          "mission_completed_events"
+        ],
+        "graph.x_axis.title_text": "날짜",
+        "graph.y_axis.title_text": "이벤트 수"
+      }
+    },
+    {
+      "key": "mission_rejection_completion_rate",
+      "name": "🧭 미션 마음 온도",
+      "description": "미션 거절률과 완료율을 함께 본다. 사용자가 미션을 반가워하는지, 부담스러워하는지 읽는 카드다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  ROUND(mission_rejected_events::numeric / NULLIF(mission_offered_events, 0) * 100, 2) AS rejection_rate_percent,",
+        "  ROUND(mission_completed_events::numeric / NULLIF(mission_offered_events, 0) * 100, 2) AS completion_rate_percent",
+        "FROM v_daily_mission_funnel",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "rejection_rate_percent",
+          "completion_rate_percent"
+        ],
+        "graph.y_axis.title_text": "비율(%)"
+      }
+    },
+    {
+      "key": "mission_category_performance",
+      "name": "🏷️ 인기 미션 취향 지도",
+      "description": "어떤 미션 카테고리가 잘 완료되고 거절되는지 본다. 사용자 취향과 추천 개선 포인트를 찾는 지도다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "WITH by_category AS (",
+        "  SELECT",
+        "    COALESCE(properties_json ->> 'category', 'UNKNOWN') AS category,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_OFFERED') AS offered,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_REJECTED') AS rejected,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_COMPLETED') AS completed",
+        "  FROM event_logs",
+        "  WHERE event_type IN ('MISSION_OFFERED', 'MISSION_REJECTED', 'MISSION_COMPLETED')",
+        "  GROUP BY COALESCE(properties_json ->> 'category', 'UNKNOWN')",
+        ")",
+        "SELECT",
+        "  category,",
+        "  offered,",
+        "  rejected,",
+        "  completed,",
+        "  ROUND(rejected::numeric / NULLIF(offered, 0) * 100, 2) AS rejection_rate_percent,",
+        "  ROUND(completed::numeric / NULLIF(offered, 0) * 100, 2) AS completion_rate_percent",
+        "FROM by_category",
+        "ORDER BY offered DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "category"
+        ],
+        "graph.metrics": [
+          "offered",
+          "rejected",
+          "completed"
+        ],
+        "graph.x_axis.title_text": "카테고리",
+        "graph.y_axis.title_text": "이벤트 수"
+      }
+    },
+    {
+      "key": "share_completion_rate",
+      "name": "📨 공유 카드 여행",
+      "description": "공유 카드를 만든 사용자가 실제 공유 완료까지 가는지 본다. 만든 카드가 세상 밖으로 나갔는지 확인한다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  share_card_created_events,",
+        "  share_completed_events,",
+        "  ROUND(",
+        "    share_completed_events::numeric",
+        "    / NULLIF(share_card_created_events, 0) * 100,",
+        "    2",
+        "  ) AS share_completion_rate_percent",
+        "FROM v_daily_share_store_activity",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "share_card_created_events",
+          "share_completed_events",
+          "share_completion_rate_percent"
+        ]
+      }
+    },
+    {
+      "key": "share_platform_performance",
+      "name": "🌐 공유 채널 지도",
+      "description": "공유가 어느 채널에서 많이 일어나는지 본다. 마케팅 채널 후보를 찾는 작은 지도다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'platform', 'UNKNOWN') AS platform,",
+        "  COUNT(*) AS share_completed_events,",
+        "  COUNT(DISTINCT user_id) AS share_users,",
+        "  COUNT(*) FILTER (WHERE properties_json ->> 'rewardEarned' = 'true') AS reward_earned_events",
+        "FROM event_logs",
+        "WHERE event_type = 'SHARE_COMPLETED'",
+        "GROUP BY COALESCE(properties_json ->> 'platform', 'UNKNOWN')",
+        "ORDER BY share_completed_events DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "platform"
+        ],
+        "graph.metrics": [
+          "share_completed_events",
+          "share_users",
+          "reward_earned_events"
+        ]
+      }
+    },
+    {
+      "key": "wallet_economy_trend",
+      "name": "🪙 별조각 지갑 흐름",
+      "description": "별조각이 얼마나 발행되고 소비되는지 본다. 보상이 쌓이기만 하는지, 실제로 쓰이는지 확인한다.",
+      "databaseKey": "users",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  total_issued,",
+        "  total_consumed,",
+        "  net_increase",
+        "FROM v_daily_wallet_economy",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "total_issued",
+          "total_consumed",
+          "net_increase"
+        ],
+        "graph.y_axis.title_text": "별조각"
+      }
+    },
+    {
+      "key": "popular_items",
+      "name": "🛒 인기 상점 아이템",
+      "description": "사용자가 어떤 아이템에 별조각을 쓰는지 본다. 캐릭터 꾸미기와 상점 개선의 근거가 된다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'itemName', 'UNKNOWN') AS item_name,",
+        "  COALESCE(properties_json ->> 'itemType', 'UNKNOWN') AS item_type,",
+        "  COUNT(*) AS purchase_count,",
+        "  COUNT(DISTINCT user_id) AS unique_buyers,",
+        "  SUM((properties_json ->> 'totalPrice')::numeric) AS total_spent",
+        "FROM event_logs",
+        "WHERE event_type = 'ITEM_PURCHASED'",
+        "GROUP BY",
+        "  COALESCE(properties_json ->> 'itemName', 'UNKNOWN'),",
+        "  COALESCE(properties_json ->> 'itemType', 'UNKNOWN')",
+        "ORDER BY purchase_count DESC",
+        "LIMIT 20;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "item_name"
+        ],
+        "graph.metrics": [
+          "purchase_count",
+          "unique_buyers",
+          "total_spent"
+        ]
+      }
+    },
+    {
+      "key": "ai_quality_trend",
+      "name": "🤖 AI 컨디션 체크",
+      "description": "AI 요청 수, fallback, rate limit, 실패 수를 본다. AI가 오늘 컨디션이 괜찮았는지 확인하는 카드다.",
+      "databaseKey": "ai",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  active_date,",
+        "  total_ai_requests,",
+        "  fallback_requests,",
+        "  rate_limit_errors,",
+        "  failed_requests,",
+        "  ROUND(fallback_requests::numeric / NULLIF(total_ai_requests, 0) * 100, 2) AS fallback_rate_percent,",
+        "  ROUND(failed_requests::numeric / NULLIF(total_ai_requests, 0) * 100, 2) AS failure_rate_percent",
+        "FROM v_daily_ai_quality",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "total_ai_requests",
+          "fallback_requests",
+          "rate_limit_errors",
+          "failed_requests"
+        ]
+      }
+    },
+    {
+      "key": "ai_fallback_by_error_type",
+      "name": "⚠️ AI Fallback 알림판",
+      "description": "fallback이 어떤 provider/errorType에서 많이 발생하는지 본다. 문제가 생겼을 때 어디부터 봐야 할지 알려준다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'errorType', 'UNKNOWN') AS error_type,",
+        "  COALESCE(properties_json ->> 'provider', 'UNKNOWN') AS provider,",
+        "  COUNT(*) AS fallback_events,",
+        "  AVG(NULLIF(properties_json ->> 'latencyMs', '')::numeric) AS avg_latency_ms",
+        "FROM event_logs",
+        "WHERE event_type = 'AI_FALLBACK_USED'",
+        "GROUP BY",
+        "  COALESCE(properties_json ->> 'errorType', 'UNKNOWN'),",
+        "  COALESCE(properties_json ->> 'provider', 'UNKNOWN')",
+        "ORDER BY fallback_events DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "error_type"
+        ],
+        "graph.metrics": [
+          "fallback_events"
+        ]
+      }
+    },
+    {
+      "key": "event_log_data_health",
+      "name": "🧪 로그 건강검진",
+      "description": "이벤트 수집 지연, user_id 누락, anonymous_id 사용량을 확인한다. 분석을 믿어도 되는지 확인하는 건강검진 카드다.",
+      "databaseKey": "eventLog",
+      "display": "table",
+      "sql": [
+        "SELECT",
+        "  DATE(created_at) AS created_date,",
+        "  COUNT(*) AS total_events,",
+        "  COUNT(*) FILTER (WHERE user_id IS NULL) AS null_user_id_events,",
+        "  COUNT(*) FILTER (WHERE anonymous_id IS NOT NULL) AS anonymous_events,",
+        "  ROUND(AVG(EXTRACT(EPOCH FROM (created_at - occurred_at))), 2) AS avg_ingestion_delay_seconds,",
+        "  MAX(EXTRACT(EPOCH FROM (created_at - occurred_at))) AS max_ingestion_delay_seconds",
+        "FROM event_logs",
+        "GROUP BY DATE(created_at)",
+        "ORDER BY created_date DESC;"
+      ],
+      "visualizationSettings": {}
+    },
+    {
+      "key": "signup_to_onboarding_rate",
+      "name": "🌱 가입에서 온보딩까지",
+      "description": "신규 가입자가 온보딩 완료까지 도달하는 비율을 일별로 본다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "WITH daily AS (",
+        "  SELECT",
+        "    DATE(occurred_at) AS active_date,",
+        "    COUNT(DISTINCT CASE WHEN event_type = 'USER_SIGNED_UP' THEN user_id END) AS signed_up_users,",
+        "    COUNT(DISTINCT CASE WHEN event_type = 'ONBOARDING_COMPLETED' THEN user_id END) AS onboarding_completed_users",
+        "  FROM event_logs",
+        "  WHERE event_type IN ('USER_SIGNED_UP', 'ONBOARDING_COMPLETED')",
+        "  GROUP BY DATE(occurred_at)",
+        ")",
+        "SELECT",
+        "  active_date,",
+        "  signed_up_users,",
+        "  onboarding_completed_users,",
+        "  ROUND(onboarding_completed_users::numeric / NULLIF(signed_up_users, 0) * 100, 2) AS signup_to_onboarding_rate_percent",
+        "FROM daily",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "signed_up_users",
+          "onboarding_completed_users",
+          "signup_to_onboarding_rate_percent"
+        ]
+      }
+    },
+    {
+      "key": "onboarding_intensity_distribution",
+      "name": "🎚️ 온보딩 미션 강도 취향",
+      "description": "온보딩 완료자가 선택한 미션 강도 분포를 본다. 추천 난이도와 마케팅 문구 조정에 쓸 수 있다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'missionIntensity', 'UNKNOWN') AS mission_intensity,",
+        "  COUNT(DISTINCT user_id) AS completed_users",
+        "FROM event_logs",
+        "WHERE event_type = 'ONBOARDING_COMPLETED'",
+        "GROUP BY COALESCE(properties_json ->> 'missionIntensity', 'UNKNOWN')",
+        "ORDER BY completed_users DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "mission_intensity"
+        ],
+        "graph.metrics": [
+          "completed_users"
+        ]
+      }
+    },
+    {
+      "key": "d1_retention",
+      "name": "🔁 D1 재방문 친구들",
+      "description": "가입 다음 날 다시 로그인한 사용자를 본다. 데이터가 적을 때는 경향 후보로만 해석한다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "WITH signup AS (",
+        "  SELECT",
+        "    user_id,",
+        "    MIN(DATE(occurred_at)) AS signup_date",
+        "  FROM event_logs",
+        "  WHERE event_type = 'USER_SIGNED_UP'",
+        "    AND user_id IS NOT NULL",
+        "  GROUP BY user_id",
+        "),",
+        "login AS (",
+        "  SELECT DISTINCT",
+        "    user_id,",
+        "    DATE(occurred_at) AS login_date",
+        "  FROM event_logs",
+        "  WHERE event_type = 'USER_LOGGED_IN'",
+        "    AND user_id IS NOT NULL",
+        ")",
+        "SELECT",
+        "  signup.signup_date,",
+        "  COUNT(*) AS signed_up_users,",
+        "  COUNT(login.user_id) AS d1_returned_users,",
+        "  ROUND(COUNT(login.user_id)::numeric / NULLIF(COUNT(*), 0) * 100, 2) AS d1_retention_percent",
+        "FROM signup",
+        "LEFT JOIN login",
+        "  ON login.user_id = signup.user_id",
+        " AND login.login_date = signup.signup_date + INTERVAL '1 day'",
+        "GROUP BY signup.signup_date",
+        "ORDER BY signup.signup_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "signup_date"
+        ],
+        "graph.metrics": [
+          "signed_up_users",
+          "d1_returned_users",
+          "d1_retention_percent"
+        ]
+      }
+    },
+    {
+      "key": "mission_difficulty_completion_rate",
+      "name": "⛰️ 난이도별 미션 성공",
+      "description": "난이도별 미션 제안 대비 완료율을 본다. 너무 어려운 미션이 사용자를 밀어내는지 확인한다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "WITH by_difficulty AS (",
+        "  SELECT",
+        "    COALESCE(properties_json ->> 'difficulty', 'UNKNOWN') AS difficulty,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_OFFERED') AS offered,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_COMPLETED') AS completed",
+        "  FROM event_logs",
+        "  WHERE event_type IN ('MISSION_OFFERED', 'MISSION_COMPLETED')",
+        "  GROUP BY COALESCE(properties_json ->> 'difficulty', 'UNKNOWN')",
+        ")",
+        "SELECT",
+        "  difficulty,",
+        "  offered,",
+        "  completed,",
+        "  ROUND(completed::numeric / NULLIF(offered, 0) * 100, 2) AS completion_rate_percent",
+        "FROM by_difficulty",
+        "ORDER BY difficulty;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "difficulty"
+        ],
+        "graph.metrics": [
+          "offered",
+          "completed",
+          "completion_rate_percent"
+        ]
+      }
+    },
+    {
+      "key": "mission_completion_session_submit_rate",
+      "name": "✍️ 완료 질문 제출률",
+      "description": "미션 완료 질문 화면에 들어간 뒤 실제 완료 제출까지 이어지는지 본다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "WITH daily AS (",
+        "  SELECT",
+        "    DATE(occurred_at) AS active_date,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_COMPLETION_SESSION_STARTED') AS completion_sessions,",
+        "    COUNT(*) FILTER (WHERE event_type = 'MISSION_COMPLETED') AS mission_completed",
+        "  FROM event_logs",
+        "  WHERE event_type IN ('MISSION_COMPLETION_SESSION_STARTED', 'MISSION_COMPLETED')",
+        "  GROUP BY DATE(occurred_at)",
+        ")",
+        "SELECT",
+        "  active_date,",
+        "  completion_sessions,",
+        "  mission_completed,",
+        "  ROUND(mission_completed::numeric / NULLIF(completion_sessions, 0) * 100, 2) AS answer_submit_rate_percent",
+        "FROM daily",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "completion_sessions",
+          "mission_completed",
+          "answer_submit_rate_percent"
+        ]
+      }
+    },
+    {
+      "key": "mission_completion_elapsed_time",
+      "name": "⏱️ 미션 완료까지 걸린 시간",
+      "description": "카테고리/난이도별 완료까지 평균/중앙 시간이 얼마나 걸리는지 본다.",
+      "databaseKey": "eventLog",
+      "display": "table",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'category', 'UNKNOWN') AS category,",
+        "  COALESCE(properties_json ->> 'difficulty', 'UNKNOWN') AS difficulty,",
+        "  ROUND(AVG((properties_json ->> 'elapsedSecondsSinceOffered')::numeric), 2) AS avg_seconds_since_offered,",
+        "  PERCENTILE_CONT(0.5) WITHIN GROUP (",
+        "    ORDER BY (properties_json ->> 'elapsedSecondsSinceOffered')::numeric",
+        "  ) AS median_seconds_since_offered",
+        "FROM event_logs",
+        "WHERE event_type = 'MISSION_COMPLETED'",
+        "  AND properties_json ? 'elapsedSecondsSinceOffered'",
+        "GROUP BY",
+        "  COALESCE(properties_json ->> 'category', 'UNKNOWN'),",
+        "  COALESCE(properties_json ->> 'difficulty', 'UNKNOWN')",
+        "ORDER BY avg_seconds_since_offered DESC;"
+      ],
+      "visualizationSettings": {}
+    },
+    {
+      "key": "share_store_daily_activity",
+      "name": "📬 공유와 상점 하루 흐름",
+      "description": "공유 카드, 공유 완료, rewardEarned 기준 공유 보상, 아이템 구매, 구매자 수를 한 번에 본다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "WITH reward_daily AS (",
+        "  SELECT",
+        "    DATE(occurred_at) AS active_date,",
+        "    COUNT(*) FILTER (WHERE properties_json ->> 'rewardEarned' = 'true') AS reward_earned_events",
+        "  FROM event_logs",
+        "  WHERE event_type = 'SHARE_COMPLETED'",
+        "  GROUP BY DATE(occurred_at)",
+        ")",
+        "SELECT",
+        "  share_store.active_date,",
+        "  share_store.share_card_created_events,",
+        "  share_store.share_completed_events,",
+        "  COALESCE(reward_daily.reward_earned_events, 0) AS reward_earned_events,",
+        "  share_store.item_purchased_events,",
+        "  share_store.unique_buyers",
+        "FROM v_daily_share_store_activity share_store",
+        "LEFT JOIN reward_daily",
+        "  ON reward_daily.active_date = share_store.active_date",
+        "ORDER BY share_store.active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "share_card_created_events",
+          "share_completed_events",
+          "reward_earned_events",
+          "item_purchased_events",
+          "unique_buyers"
+        ]
+      }
+    },
+    {
+      "key": "share_reward_rate",
+      "name": "🎁 공유 보상 획득률",
+      "description": "공유 완료 이벤트 중 보상을 받은 비율을 본다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(properties_json ->> 'platform', 'UNKNOWN') AS platform,",
+        "  COUNT(*) AS share_completed_events,",
+        "  COUNT(*) FILTER (WHERE properties_json ->> 'rewardEarned' = 'true') AS reward_earned_events,",
+        "  ROUND(",
+        "    COUNT(*) FILTER (WHERE properties_json ->> 'rewardEarned' = 'true')::numeric",
+        "    / NULLIF(COUNT(*), 0) * 100,",
+        "    2",
+        "  ) AS reward_rate_percent",
+        "FROM event_logs",
+        "WHERE event_type = 'SHARE_COMPLETED'",
+        "GROUP BY COALESCE(properties_json ->> 'platform', 'UNKNOWN')",
+        "ORDER BY share_completed_events DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "platform"
+        ],
+        "graph.metrics": [
+          "share_completed_events",
+          "reward_earned_events",
+          "reward_rate_percent"
+        ]
+      }
+    },
+    {
+      "key": "item_purchase_daily",
+      "name": "🛍️ 상점 구매 하루 흐름",
+      "description": "일별 아이템 구매 수, 구매자 수, 총 소비 별조각을 본다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  DATE(occurred_at) AS active_date,",
+        "  COUNT(*) AS item_purchased_events,",
+        "  COUNT(DISTINCT user_id) AS unique_buyers,",
+        "  SUM((properties_json ->> 'totalPrice')::numeric) AS total_purchase_amount",
+        "FROM event_logs",
+        "WHERE event_type = 'ITEM_PURCHASED'",
+        "GROUP BY DATE(occurred_at)",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "item_purchased_events",
+          "unique_buyers",
+          "total_purchase_amount"
+        ]
+      }
+    },
+    {
+      "key": "buyer_vs_nonbuyer_missions",
+      "name": "💞 구매 친구 vs 비구매 친구",
+      "description": "아이템 구매 경험이 있는 사용자와 없는 사용자의 미션 완료 횟수를 비교한다. 인과가 아니라 관찰 지표다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "WITH buyers AS (",
+        "  SELECT DISTINCT user_id",
+        "  FROM event_logs",
+        "  WHERE event_type = 'ITEM_PURCHASED'",
+        "    AND user_id IS NOT NULL",
+        "),",
+        "mission_users AS (",
+        "  SELECT",
+        "    user_id,",
+        "    COUNT(*) AS completed_count",
+        "  FROM event_logs",
+        "  WHERE event_type = 'MISSION_COMPLETED'",
+        "    AND user_id IS NOT NULL",
+        "  GROUP BY user_id",
+        ")",
+        "SELECT",
+        "  CASE WHEN buyers.user_id IS NULL THEN '비구매 친구' ELSE '구매 친구' END AS user_segment,",
+        "  COUNT(DISTINCT mission_users.user_id) AS users,",
+        "  ROUND(AVG(mission_users.completed_count), 2) AS avg_completed_missions",
+        "FROM mission_users",
+        "LEFT JOIN buyers",
+        "  ON buyers.user_id = mission_users.user_id",
+        "GROUP BY CASE WHEN buyers.user_id IS NULL THEN '비구매 친구' ELSE '구매 친구' END;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "user_segment"
+        ],
+        "graph.metrics": [
+          "users",
+          "avg_completed_missions"
+        ]
+      }
+    },
+    {
+      "key": "star_piece_spent_events",
+      "name": "⭐ 별조각 사용 내역",
+      "description": "별조각 소비 이벤트의 일별 건수와 소비량을 본다.",
+      "databaseKey": "eventLog",
+      "display": "line",
+      "sql": [
+        "SELECT",
+        "  DATE(occurred_at) AS active_date,",
+        "  COUNT(*) AS spent_events,",
+        "  SUM((properties_json ->> 'amount')::numeric) AS spent_amount",
+        "FROM event_logs",
+        "WHERE event_type = 'STAR_PIECE_SPENT'",
+        "GROUP BY DATE(occurred_at)",
+        "ORDER BY active_date ASC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "active_date"
+        ],
+        "graph.metrics": [
+          "spent_events",
+          "spent_amount"
+        ]
+      }
+    },
+    {
+      "key": "latest_ai_fallback_rate",
+      "name": "🧯 최근 AI Fallback 비율",
+      "description": "가장 최근 날짜의 AI fallback 비율을 본다.",
+      "databaseKey": "ai",
+      "display": "scalar",
+      "sql": [
+        "SELECT",
+        "  ROUND(fallback_requests::numeric / NULLIF(total_ai_requests, 0) * 100, 2) AS fallback_rate_percent",
+        "FROM v_daily_ai_quality",
+        "ORDER BY active_date DESC",
+        "LIMIT 1;"
+      ],
+      "visualizationSettings": {
+        "scalar.field": "fallback_rate_percent",
+        "column_settings": {
+          "[\"name\",\"fallback_rate_percent\"]": {
+            "suffix": "%",
+            "decimals": 2
+          }
+        }
+      }
+    },
+    {
+      "key": "ai_status_by_model",
+      "name": "🧠 모델별 AI 상태",
+      "description": "AI 생성 이력을 모델/상태/fallback 여부로 나눠 본다.",
+      "databaseKey": "ai",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(model, 'UNKNOWN') AS model,",
+        "  status,",
+        "  fallback_used,",
+        "  COUNT(*) AS requests",
+        "FROM ai_mission_generations",
+        "GROUP BY COALESCE(model, 'UNKNOWN'), status, fallback_used",
+        "ORDER BY requests DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "model"
+        ],
+        "graph.metrics": [
+          "requests"
+        ]
+      }
+    },
+    {
+      "key": "ai_usage_latency",
+      "name": "⏳ AI 응답 시간",
+      "description": "ai_usage_logs 기준 모델별 평균/최대 latency를 본다.",
+      "databaseKey": "ai",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  COALESCE(model, 'UNKNOWN') AS model,",
+        "  status,",
+        "  ROUND(AVG(latency_ms), 2) AS avg_latency_ms,",
+        "  MAX(latency_ms) AS max_latency_ms,",
+        "  COUNT(*) AS usage_events",
+        "FROM ai_usage_logs",
+        "GROUP BY COALESCE(model, 'UNKNOWN'), status",
+        "ORDER BY avg_latency_ms DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "model"
+        ],
+        "graph.metrics": [
+          "avg_latency_ms",
+          "max_latency_ms",
+          "usage_events"
+        ]
+      }
+    },
+    {
+      "key": "event_type_distribution",
+      "name": "🧺 이벤트 타입 바구니",
+      "description": "어떤 이벤트가 많이 들어오는지 본다. 이벤트 설계와 수집 누락 점검에 좋다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  event_type,",
+        "  COUNT(*) AS events,",
+        "  COUNT(DISTINCT user_id) AS unique_users",
+        "FROM event_logs",
+        "GROUP BY event_type",
+        "ORDER BY events DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "event_type"
+        ],
+        "graph.metrics": [
+          "events",
+          "unique_users"
+        ]
+      }
+    },
+    {
+      "key": "event_source_service_distribution",
+      "name": "🏭 서비스별 로그 생산량",
+      "description": "어떤 source_service에서 이벤트가 많이 들어오는지 본다.",
+      "databaseKey": "eventLog",
+      "display": "bar",
+      "sql": [
+        "SELECT",
+        "  source_service,",
+        "  COUNT(*) AS events,",
+        "  COUNT(DISTINCT user_id) AS unique_users",
+        "FROM event_logs",
+        "GROUP BY source_service",
+        "ORDER BY events DESC;"
+      ],
+      "visualizationSettings": {
+        "graph.dimensions": [
+          "source_service"
+        ],
+        "graph.metrics": [
+          "events",
+          "unique_users"
+        ]
+      }
+    },
+    {
+      "key": "late_ingestion_events",
+      "name": "🐢 늦게 들어온 이벤트",
+      "description": "created_at과 occurred_at 차이가 큰 이벤트를 찾아 수집 지연을 점검한다.",
+      "databaseKey": "eventLog",
+      "display": "table",
+      "sql": [
+        "SELECT",
+        "  event_type,",
+        "  source_service,",
+        "  occurred_at,",
+        "  created_at,",
+        "  ROUND(EXTRACT(EPOCH FROM (created_at - occurred_at)), 2) AS ingestion_delay_seconds",
+        "FROM event_logs",
+        "ORDER BY ingestion_delay_seconds DESC",
+        "LIMIT 50;"
+      ],
+      "visualizationSettings": {}
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "executive_overview",
+      "name": "🌟 Polaris 한눈에 보는 성장 리포트",
+      "description": "발표/운영팀 공유용 첫 화면. 사용자 성장, 첫 경험, 미션 흐름, 공유, 상점, 별조각, AI 품질을 한 화면에서 귀엽고 또렷하게 본다.",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🌟 Polaris 오늘의 반짝 리포트\n사용자 유입, 첫 경험, 미션, 공유, 상점, AI 품질을 한 화면에서 살펴보는 운영/마케팅 대시보드",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "latest_dau",
+          "row": 2,
+          "col": 0,
+          "sizeX": 6,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "latest_new_users",
+          "row": 2,
+          "col": 6,
+          "sizeX": 6,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "latest_core_action_users",
+          "row": 2,
+          "col": 12,
+          "sizeX": 6,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "latest_mission_completion_rate",
+          "row": 2,
+          "col": 18,
+          "sizeX": 6,
+          "sizeY": 4
+        },
+        {
+          "type": "text",
+          "row": 6,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "## 🌱 사용자 성장과 첫 경험\n새 사용자가 들어오고, 온보딩과 캐릭터 생성, 첫 미션까지 자연스럽게 이어지는지 본다.",
+          "background": false,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "dau_growth_trend",
+          "row": 8,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "activation_funnel_daily",
+          "row": 8,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "type": "text",
+          "row": 16,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "## 🎯 미션 취향과 완료 흐름\n사용자가 어떤 미션을 반가워하고, 어디에서 부담을 느끼는지 확인한다.",
+          "background": false,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "mission_rejection_completion_rate",
+          "row": 18,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "mission_category_performance",
+          "row": 18,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "type": "text",
+          "row": 26,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "## 📣 공유와 상점 행동\n공유 카드가 밖으로 나가는지, 별조각이 실제 상점 소비로 이어지는지 본다.",
+          "background": false,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "share_completion_rate",
+          "row": 28,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "share_platform_performance",
+          "row": 28,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "wallet_economy_trend",
+          "row": 36,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "popular_items",
+          "row": 36,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "type": "text",
+          "row": 44,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "## 🤖 AI와 데이터 건강\nAI fallback과 로그 품질을 함께 보면서, 분석 결과를 믿어도 되는지 확인한다.",
+          "background": false,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "ai_quality_trend",
+          "row": 46,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "ai_fallback_by_error_type",
+          "row": 46,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "event_log_data_health",
+          "row": 54,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "growth_activation",
+      "name": "🌱 사용자 성장과 첫 경험 리포트",
+      "description": "신규 가입, 온보딩, 핵심 행동, D1 재방문을 보는 성장/activation 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🌱 사용자 성장과 첫 경험\n새 친구가 들어와서 온보딩을 마치고, 핵심 행동까지 자연스럽게 이어지는지 보는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "latest_new_users",
+          "row": 2,
+          "col": 0,
+          "sizeX": 8,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "latest_dau",
+          "row": 2,
+          "col": 8,
+          "sizeX": 8,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "latest_core_action_users",
+          "row": 2,
+          "col": 16,
+          "sizeX": 8,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "dau_growth_trend",
+          "row": 6,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "signup_to_onboarding_rate",
+          "row": 6,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "activation_funnel_daily",
+          "row": 14,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "onboarding_intensity_distribution",
+          "row": 14,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "d1_retention",
+          "row": 22,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "mission_funnel",
+      "name": "🎯 미션 취향과 완료 흐름 리포트",
+      "description": "미션 제안, 거절, 완료, 난이도, 카테고리, 완료 질문 이탈을 보는 미션 분석 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🎯 미션 취향과 완료 흐름\n사용자가 어떤 미션을 반가워하고, 어디에서 부담을 느끼는지 읽는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "latest_mission_completion_rate",
+          "row": 2,
+          "col": 0,
+          "sizeX": 8,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "mission_rejection_completion_rate",
+          "row": 6,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "mission_category_performance",
+          "row": 6,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "mission_difficulty_completion_rate",
+          "row": 14,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "mission_completion_session_submit_rate",
+          "row": 14,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "mission_completion_elapsed_time",
+          "row": 22,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "share_viral",
+      "name": "📣 공유와 확산 리포트",
+      "description": "공유 카드 생성, 공유 완료, 공유 채널, 공유 보상을 보는 마케팅/확산 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 📣 공유와 확산\n공유 카드가 만들어지고, 실제 공유로 이어지고, 어떤 채널에서 퍼지는지 보는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "share_store_daily_activity",
+          "row": 2,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "share_completion_rate",
+          "row": 10,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "share_platform_performance",
+          "row": 10,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "share_reward_rate",
+          "row": 18,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "store_reward_economy",
+      "name": "🪙 별조각과 상점 리포트",
+      "description": "별조각 발행/소비, 아이템 구매, 인기 아이템, 구매 유저 행동을 보는 경제/상점 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🪙 별조각과 상점\n보상이 쌓이기만 하는지, 실제 아이템 구매와 캐릭터 꾸미기로 이어지는지 보는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "wallet_economy_trend",
+          "row": 2,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "item_purchase_daily",
+          "row": 2,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "popular_items",
+          "row": 10,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "star_piece_spent_events",
+          "row": 10,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "buyer_vs_nonbuyer_missions",
+          "row": 18,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "ai_quality",
+      "name": "🤖 AI 품질 리포트",
+      "description": "AI 요청, fallback, 오류 원인, 모델별 상태, latency를 보는 AI 운영/품질 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🤖 AI 품질\nAI가 오늘 안정적으로 움직였는지, fallback이 얼마나 발생했는지 보는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "latest_ai_fallback_rate",
+          "row": 2,
+          "col": 0,
+          "sizeX": 8,
+          "sizeY": 4
+        },
+        {
+          "cardKey": "ai_quality_trend",
+          "row": 6,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "ai_fallback_by_error_type",
+          "row": 6,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "ai_status_by_model",
+          "row": 14,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "ai_usage_latency",
+          "row": 14,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        }
+      ]
+    },
+    {
+      "key": "data_health",
+      "name": "🧪 로그 데이터 건강검진 리포트",
+      "description": "이벤트 수집량, source_service, user_id 누락, 수집 지연을 보는 데이터 품질 대시보드",
+      "cards": [
+        {
+          "type": "text",
+          "row": 0,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 2,
+          "text": "# 🧪 로그 데이터 건강검진\n분석 결과를 믿기 전에 이벤트가 빠짐없이, 너무 늦지 않게 들어오는지 보는 화면",
+          "background": true,
+          "alignHorizontal": "left",
+          "alignVertical": "middle"
+        },
+        {
+          "cardKey": "event_log_data_health",
+          "row": 2,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "event_type_distribution",
+          "row": 10,
+          "col": 0,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "event_source_service_distribution",
+          "row": 10,
+          "col": 12,
+          "sizeX": 12,
+          "sizeY": 8
+        },
+        {
+          "cardKey": "late_ingestion_events",
+          "row": 18,
+          "col": 0,
+          "sizeX": 24,
+          "sizeY": 8
+        }
+      ]
+    }
+  ]
+}

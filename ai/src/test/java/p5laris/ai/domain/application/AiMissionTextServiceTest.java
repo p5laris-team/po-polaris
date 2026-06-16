@@ -4,6 +4,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import p5laris.ai.AiIntegrationTestContainers;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
 import p5laris.ai.domain.domain.enums.AiErrorType;
@@ -42,7 +45,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "internal.grpc-auth.enabled=true",
         "internal.grpc-auth.token=test-internal-grpc-token"
 })
-class AiMissionTextServiceTest {
+class AiMissionTextServiceTest extends AiIntegrationTestContainers {
+
+    @MockitoBean
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     @Autowired
     private AiMissionTextService aiMissionTextService;

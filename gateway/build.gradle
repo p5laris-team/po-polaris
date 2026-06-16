@@ -2,11 +2,16 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.14'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.asciidoctor.jvm.convert' version '4.0.4'
 }
 
 group = 'p5laris'
 version = '0.0.1-SNAPSHOT'
 description = 'gateway'
+
+ext {
+    snippetsDir = file('build/generated-snippets')
+}
 
 java {
     toolchain {
@@ -21,6 +26,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
     implementation 'me.paulschwarz:spring-dotenv:4.0.0'
     implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
 
@@ -31,6 +37,7 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -39,4 +46,18 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    outputs.dir snippetsDir
+}
+
+tasks.named('asciidoctor') {
+    inputs.dir snippetsDir
+    dependsOn tasks.named('test')
+    attributes 'snippets': snippetsDir
+}
+
+tasks.named('bootJar') {
+    dependsOn tasks.named('asciidoctor')
+    from(tasks.named('asciidoctor').map { it.outputDir }) {
+        into 'static/docs'
+    }
 }

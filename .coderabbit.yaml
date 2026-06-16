@@ -158,9 +158,9 @@ reviews:
         API 명세, ERD, PRD, backend policy가 서로 충돌하면 어느 문서가 기준인지 PR에서 명시하도록 제안해주세요.
 
   auto_review:
-    enabled: false
+    enabled: true
     description_keyword: "@coderabbitai review"
-    auto_incremental_review: false
+    auto_incremental_review: true
     drafts: false
     ignore_title_keywords:
       - "WIP"

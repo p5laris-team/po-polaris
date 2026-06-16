@@ -1,6 +1,7 @@
 plugins {
     id "dev.nx.gradle.project-graph" version "0.1.20"
     id 'java'
+    id 'jacoco'
 //    id 'org.springframework.boot' version '3.5.14' apply false
 //    id 'io.spring.dependency-management' version '1.1.7' apply false
     id 'com.google.protobuf' version '0.9.4' apply false
@@ -16,7 +17,177 @@ allprojects {
 }
 
 subprojects {
+    apply plugin: 'jacoco'
+
+    jacoco {
+        toolVersion = '0.8.13'
+    }
+
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+    }
+
+    pluginManager.withPlugin('java') {
+        tasks.withType(Test).configureEach {
+            finalizedBy tasks.named('jacocoTestReport')
+        }
+
+        tasks.named('jacocoTestReport') {
+            reports {
+                xml.required = true
+                html.required = true
+                csv.required = false
+            }
+        }
+    }
+}
+
+def coverageProjects = subprojects.findAll { it.name != 'proto' }
+def aggregateExecutionData = {
+    coverageProjects.collect {
+        it.fileTree(dir: "${it.layout.buildDirectory.get()}/jacoco", include: '*.exec')
+    }
+}
+def aggregateClassDirectories = {
+    coverageProjects.collect {
+        it.fileTree(dir: "${it.layout.buildDirectory.get()}/classes/java/main")
+    }
+}
+
+tasks.register('jacocoRootReport', JacocoReport) {
+    group = 'verification'
+    description = 'Generates an aggregate JaCoCo report for all application modules.'
+
+    dependsOn coverageProjects.collect { it.tasks.named('testClasses') }
+
+    executionData.from(aggregateExecutionData())
+    sourceDirectories.from(coverageProjects.collect {
+        it.files('src/main/java')
+    })
+    classDirectories.from(aggregateClassDirectories())
+
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = true
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/root/jacocoRootReport.xml')
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/root/html')
+        csv.outputLocation = layout.buildDirectory.file('reports/jacoco/root/jacocoRootReport.csv')
+    }
+
+    onlyIf {
+        executionData.files.any { it.exists() }
+    }
+}
+
+tasks.register('jacocoBaselineVerification', JacocoCoverageVerification) {
+    group = 'verification'
+    description = 'Prevents coverage regressions below the measured critical-path baseline.'
+    dependsOn tasks.named('jacocoRootReport')
+
+    executionData.from(aggregateExecutionData())
+    classDirectories.from(aggregateClassDirectories())
+
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = ['p5laris.user.domain.application.PaymentService']
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = ['p5laris.mission.domain.application.MissionRewardDispatcher']
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'p5laris.ai.domain.application.AiCharacterTalkService',
+                    'p5laris.ai.domain.application.AiMissionTextPersistenceService',
+                    'p5laris.ai.domain.application.AiTextEmbeddingService'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'p5laris.ai.domain.domain.policy.CharacterTalkValidationPolicy',
+                    'p5laris.ai.domain.domain.policy.MissionTextValidationPolicy'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = ['p5laris.mission.domain.application.time.MissionTimePolicy']
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+}
+
+tasks.register('jacocoTargetVerification', JacocoCoverageVerification) {
+    group = 'verification'
+    description = 'Checks the portfolio target coverage; expected to fail until the backlog is completed.'
+    dependsOn tasks.named('jacocoRootReport')
+
+    executionData.from(aggregateExecutionData())
+    classDirectories.from(aggregateClassDirectories())
+
+    violationRules {
+        rule {
+            element = 'BUNDLE'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.60
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'p5laris.user.domain.application.PaymentService',
+                    'p5laris.mission.domain.application.MissionRewardDispatcher',
+                    'p5laris.ai.domain.application.AiCharacterTalkService',
+                    'p5laris.ai.domain.application.AiMissionTextPersistenceService',
+                    'p5laris.ai.domain.application.AiTextEmbeddingService'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+        }
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'p5laris.ai.domain.domain.policy.CharacterTalkValidationPolicy',
+                    'p5laris.ai.domain.domain.policy.MissionTextValidationPolicy',
+                    'p5laris.mission.domain.application.time.MissionTimePolicy'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
     }
 }

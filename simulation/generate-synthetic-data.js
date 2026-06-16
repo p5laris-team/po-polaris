@@ -13,6 +13,17 @@
 const fs = require('fs');
 const path = require('path');
 
+function createSeededRandom(seed) {
+    let state = seed >>> 0;
+    return function random() {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        return state / 0x100000000;
+    };
+}
+
+const seed = Number(process.env.SIMULATION_SEED || 20260510);
+const random = createSeededRandom(seed);
+
 /**
  * ── [페르소나 설계] 3가지 유형의 가상 사용자 모델 ──
  * 1. EarlyBird_MorningLight: 아침형, 온화한/간단한 미션 선호, 미션 완료율이 매우 높음 (비중 40%)
@@ -109,7 +120,7 @@ function generateAllDatasets(userCount = 100) {
             });
 
             // 3. 미션 수행 여부 결정 (완료 확률 completionProb 시뮬레이션 적용)
-            const completedMission = Math.random() < persona.completionProb;
+            const completedMission = random() < persona.completionProb;
             const eventType = completedMission ? 'MISSION_COMPLETED' : 'MISSION_REJECTED';
             
             missionEvents.push({
@@ -136,7 +147,7 @@ function generateAllDatasets(userCount = 100) {
             }
 
             // 4. SNS 공유 이벤트 발생 여부 시뮬레이션
-            if (Math.random() < persona.shareProb) {
+            if (random() < persona.shareProb) {
                 shareEvents.push({
                     user_id: userId,
                     share_date: dateStr,
@@ -153,7 +164,7 @@ function generateAllDatasets(userCount = 100) {
                 user_id: userId,
                 request_id: `req-${userId}-001`,
                 model: 'gemini-2.5-flash',
-                latency_ms: Math.round(500 + Math.random() * 500),
+                latency_ms: Math.round(500 + random() * 500),
                 status: 'SUCCESS',
                 error_type: 'null',
                 created_at: `${dateStr}T09:01:00`
@@ -228,4 +239,10 @@ function generateAllDatasets(userCount = 100) {
 }
 
 // 기본 유저 규모 300명 설정 후 실행
-generateAllDatasets(300);
+const requestedUserCount = Number(process.env.SIMULATION_USER_COUNT || 300);
+if (!Number.isInteger(requestedUserCount) || requestedUserCount < 1) {
+    throw new Error('SIMULATION_USER_COUNT must be a positive integer.');
+}
+
+console.log(`Synthetic data seed: ${seed}`);
+generateAllDatasets(requestedUserCount);

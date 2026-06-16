@@ -12,6 +12,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
+import p5laris.character.domain.application.event.CharacterEventLogEvent;
 import p5laris.character.domain.application.dto.CareActionResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
 import p5laris.character.domain.domain.entity.CharacterExpLog;
@@ -870,6 +871,111 @@ class CharacterServiceTest {
         assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
         assertEquals("http://cdn/skin-hungry.png", response.assetUrls().get("hungry"));
         assertEquals("http://cdn/skin-idle.png", response.assetUrls().get("idle"));
+    }
+
+    @Test
+    void getCharacterTypes_mapsActiveCatalog() {
+        CharacterType nova = CharacterType.builder()
+                .code("NOVA")
+                .name("Nova")
+                .summary("Calm companion")
+                .personality("Calm")
+                .speechStyle("Warm")
+                .introMessage("Hello")
+                .sampleLine("Take it easy")
+                .active(true)
+                .sortOrder(1)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(nova, "id", 10L);
+        when(characterTypeRepository.findByActiveTrueOrderBySortOrderAsc())
+                .thenReturn(List.of(nova));
+
+        var response = characterService.getCharacterTypes();
+
+        assertEquals(1, response.size());
+        assertEquals(10L, response.get(0).id());
+        assertEquals("NOVA", response.get(0).code());
+        assertEquals("Calm companion", response.get(0).summary());
+        assertEquals(1, response.get(0).sortOrder());
+    }
+
+    @Test
+    void getCharacterAssets_mapsPublicUrls() {
+        CharacterAsset asset = CharacterAsset.builder()
+                .characterType(character.getCharacterType())
+                .assetType("IDLE")
+                .assetUrl("private/idle.png")
+                .build();
+        when(characterTypeRepository.existsById(1L)).thenReturn(true);
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(List.of(asset));
+        when(s3StorageService.toPublicUrl("private/idle.png"))
+                .thenReturn("https://cdn.example/idle.png");
+
+        var response = characterService.getCharacterAssets(1L);
+
+        assertEquals(1, response.size());
+        assertEquals("IDLE", response.get(0).assetType());
+        assertEquals("https://cdn.example/idle.png", response.get(0).assetUrl());
+    }
+
+    @Test
+    void getCharacterAssets_rejectsMissingCharacterType() {
+        when(characterTypeRepository.existsById(999L)).thenReturn(false);
+
+        CharacterException exception = assertThrows(
+                CharacterException.class,
+                () -> characterService.getCharacterAssets(999L)
+        );
+
+        assertEquals(CharacterErrorCode.CHARACTER_TYPE_NOT_FOUND, exception.getErrorCode());
+        verifyNoInteractions(characterAssetRepository);
+    }
+
+    @Test
+    void updateCharacterName_updatesOwnedCharacter() {
+        when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
+
+        var response = characterService.updateCharacterName(1L, 1L, "Comet");
+
+        assertEquals("Comet", response.name());
+        assertEquals("Comet", character.getName());
+        assertNotNull(response.updatedAt());
+    }
+
+    @Test
+    void updateCharacterName_rejectsNonOwner() {
+        when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
+
+        CharacterException exception = assertThrows(
+                CharacterException.class,
+                () -> characterService.updateCharacterName(1L, 2L, "Comet")
+        );
+
+        assertEquals(CharacterErrorCode.NOT_CHARACTER_OWNER, exception.getErrorCode());
+        assertEquals("Nova", character.getName());
+    }
+
+    @Test
+    void createCharacter_deactivatesPreviousCharacterAndRejectsInvalidName() {
+        CharacterType type = character.getCharacterType();
+        when(characterTypeRepository.findById(1L)).thenReturn(Optional.of(type));
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L))
+                .thenReturn(Optional.of(character));
+        when(userCharacterRepository.save(any(UserCharacter.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = characterService.createCharacter(1L, 1L, "Comet");
+
+        assertFalse(character.isActive());
+        assertEquals("Comet", response.name());
+        verify(userCharacterRepository).saveAndFlush(character);
+        verify(eventPublisher).publishEvent(any(CharacterEventLogEvent.class));
+
+        CharacterException exception = assertThrows(
+                CharacterException.class,
+                () -> characterService.createCharacter(1L, 1L, "name-is-too-long")
+        );
+        assertEquals(CharacterErrorCode.INVALID_CHARACTER_NAME, exception.getErrorCode());
     }
 
     private void mockOwnedCareItem(Long itemId, String effectType) {

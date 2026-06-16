@@ -58,9 +58,14 @@ public class MissionRewardDispatcher {
     }
 
     public void dispatchNow(Long outboxId) {
-        RewardDispatchCommand command = claim(outboxId, true)
-                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
-
+        RewardDispatchCommand command;
+        try {
+            command = claim(outboxId, true)
+                    .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+        } catch (MissionException e) {
+            markPoisoned(outboxId, e.getMessage());
+            throw e;
+        }
         dispatchClaimed(command);
     }
 
@@ -76,17 +81,24 @@ public class MissionRewardDispatcher {
 
         int succeededCount = 0;
         for (Long outboxId : outboxIds) {
-            Optional<RewardDispatchCommand> command = claim(outboxId, false);
+            Optional<RewardDispatchCommand> command;
+            try {
+                command = claim(outboxId, false);
+            } catch (MissionException e) {
+                markPoisoned(outboxId, e.getMessage());
+                log.warn("미션 보상 poison outbox 처리 실패. outboxId={}, errorCode={}",
+                        outboxId, e.getErrorCode().getCode());
+                continue;
+            }
             if (command.isEmpty()) {
                 continue;
             }
-
             try {
                 dispatchClaimed(command.get());
                 succeededCount++;
             } catch (MissionException e) {
-                log.warn("미션 보상 outbox Kafka 발행 실패. outboxId={}, missionId={}, errorCode={}",
-                        command.get().outboxId(), command.get().missionId(), e.getErrorCode().getCode());
+                log.warn("미션 보상 outbox Kafka 발행 실패. outboxId={}, errorCode={}",
+                        outboxId, e.getErrorCode().getCode());
             }
         }
         return succeededCount;
@@ -279,6 +291,25 @@ public class MissionRewardDispatcher {
                     missionRewardOutboxProperties.getMaxAttempts()
             );
         });
+    }
+
+    private void markPoisoned(Long outboxId, String errorMessage) {
+        transactionTemplate.executeWithoutResult(status ->
+                missionOutboxEventRepository.findByIdForUpdate(outboxId).ifPresent(outbox -> {
+                    if (!isMissionRewardEvent(outbox)
+                            || outbox.getStatus() == MissionOutboxEventStatus.SUCCEEDED
+                            || outbox.getStatus() == MissionOutboxEventStatus.FAILED) {
+                        return;
+                    }
+                    LocalDateTime now = LocalDateTime.now(clock);
+                    int nextAttemptCount = outbox.getAttemptCount() + 1;
+                    outbox.recordFailure(
+                            errorMessage,
+                            missionRewardBackoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                            missionRewardOutboxProperties.getMaxAttempts()
+                    );
+                })
+        );
     }
 
     private record RewardDispatchCommand(

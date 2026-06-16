@@ -2,8 +2,8 @@ package p5laris.user.domain.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +26,6 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PaymentService {
 
     private final PaymentOrderRepository orderRepository;
@@ -34,8 +33,8 @@ public class PaymentService {
     private final WalletService walletService;
     private final PaymentTxHelper paymentTxHelper;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final ObjectMapper objectMapper;
+    private final HttpClient httpClient;
 
     @Value("${portone.store-id}")
     private String storeId;
@@ -45,6 +44,39 @@ public class PaymentService {
 
     @Value("${portone.mock-mode:false}")
     private boolean mockMode;
+
+    @Autowired
+    public PaymentService(
+            PaymentOrderRepository orderRepository,
+            PaymentTransactionRepository transactionRepository,
+            WalletService walletService,
+            PaymentTxHelper paymentTxHelper
+    ) {
+        this(
+                orderRepository,
+                transactionRepository,
+                walletService,
+                paymentTxHelper,
+                new ObjectMapper(),
+                HttpClient.newHttpClient()
+        );
+    }
+
+    PaymentService(
+            PaymentOrderRepository orderRepository,
+            PaymentTransactionRepository transactionRepository,
+            WalletService walletService,
+            PaymentTxHelper paymentTxHelper,
+            ObjectMapper objectMapper,
+            HttpClient httpClient
+    ) {
+        this.orderRepository = orderRepository;
+        this.transactionRepository = transactionRepository;
+        this.walletService = walletService;
+        this.paymentTxHelper = paymentTxHelper;
+        this.objectMapper = objectMapper;
+        this.httpClient = httpClient;
+    }
 
     /**
      * 결제 주문을 생성합니다. (결제창 오픈 전 단계)

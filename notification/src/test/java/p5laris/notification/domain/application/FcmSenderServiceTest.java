@@ -1,5 +1,7 @@
 package p5laris.notification.domain.application;
 
+import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,7 +9,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import p5laris.notification.domain.domain.entity.FcmDeviceToken;
+import p5laris.notification.domain.domain.entity.Notification;
 import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
+import p5laris.notification.domain.domain.enums.FcmPlatform;
+import p5laris.notification.domain.domain.enums.FcmTokenDeactivatedReason;
+import p5laris.notification.domain.domain.enums.NotificationType;
 import p5laris.notification.domain.domain.enums.PushDeliveryStatus;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
 import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
@@ -21,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +43,9 @@ class FcmSenderServiceTest {
 
     @Mock
     private NotificationPushDeliveryRepository notificationPushDeliveryRepository;
+
+    @Mock
+    private FcmMessageSender fcmMessageSender;
 
     @InjectMocks
     private FcmSenderService fcmSenderService;
@@ -126,5 +137,223 @@ class FcmSenderServiceTest {
         assertThat(delivery.getNextAttemptAt()).isNull();
         verify(notificationPushDeliveryRepository).save(delivery);
         verify(fcmDeviceTokenRepository, never()).findById(any());
+    }
+    @Test
+    void reservedDelivery_withInactiveToken_isSkipped() {
+        NotificationPushDelivery delivery = NotificationPushDelivery.builder()
+                .notificationId(100L)
+                .userId(1001L)
+                .fcmDeviceTokenId(200L)
+                .build();
+        ReflectionTestUtils.setField(delivery, "id", 300L);
+        Notification notification = Notification.builder()
+                .userId(1001L)
+                .notificationType(NotificationType.MISSION)
+                .title("title")
+                .message("message")
+                .pushRequired(true)
+                .build();
+        FcmDeviceToken inactiveToken = FcmDeviceToken.builder()
+                .userId(1001L)
+                .fcmToken("inactive-token")
+                .tokenHash("inactive-hash")
+                .platform(FcmPlatform.WEB)
+                .build();
+        inactiveToken.deactivate(FcmTokenDeactivatedReason.TOKEN_INVALID);
+
+        when(notificationPushDeliveryRepository.findDueByNotificationId(
+                eq(100L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class)
+        )).thenReturn(List.of(delivery));
+        when(notificationPushDeliveryRepository.reservePendingDelivery(
+                eq(300L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
+        when(notificationPushDeliveryRepository.findById(300L)).thenReturn(Optional.of(delivery));
+        when(notificationRepository.findById(100L)).thenReturn(Optional.of(notification));
+        when(fcmDeviceTokenRepository.findById(200L)).thenReturn(Optional.of(inactiveToken));
+
+        fcmSenderService.dispatchPendingDeliveries(100L);
+
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SKIPPED);
+        assertThat(delivery.getErrorCode()).isEqualTo("TOKEN_INACTIVE");
+        assertThat(delivery.getNextAttemptAt()).isNull();
+        verify(notificationPushDeliveryRepository).save(delivery);
+        verify(fcmDeviceTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void dispatchDuePendingDeliveries_sendsReservedDelivery() throws Exception {
+        NotificationPushDelivery delivery = delivery();
+        Notification notification = notification();
+        FcmDeviceToken token = activeToken();
+        when(notificationPushDeliveryRepository.findDue(
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class),
+                any()
+        )).thenReturn(List.of(delivery));
+        stubReservedDelivery(delivery, notification, token);
+        when(fcmMessageSender.send(any(Message.class))).thenReturn("message-123");
+
+        fcmSenderService.dispatchDuePendingDeliveries();
+
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SENT);
+        assertThat(delivery.getFcmMessageId()).isEqualTo("message-123");
+        assertThat(delivery.getNextAttemptAt()).isNull();
+        verify(notificationPushDeliveryRepository).save(delivery);
+    }
+
+    @Test
+    void permanentFirebaseFailure_deactivatesTokenAndFailsDelivery() throws Exception {
+        NotificationPushDelivery delivery = delivery();
+        Notification notification = notification();
+        FcmDeviceToken token = activeToken();
+        FirebaseMessagingException exception = firebaseException(MessagingErrorCode.UNREGISTERED);
+        when(notificationPushDeliveryRepository.findDueByNotificationId(
+                eq(100L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class)
+        )).thenReturn(List.of(delivery));
+        stubReservedDelivery(delivery, notification, token);
+        when(fcmMessageSender.send(any(Message.class))).thenThrow(exception);
+
+        fcmSenderService.dispatchPendingDeliveries(100L);
+
+        assertThat(token.isActive()).isFalse();
+        assertThat(token.getDeactivatedReason()).isEqualTo(FcmTokenDeactivatedReason.TOKEN_INVALID);
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.FAILED);
+        assertThat(delivery.getErrorCode()).isEqualTo("UNREGISTERED");
+        verify(fcmDeviceTokenRepository).save(token);
+        verify(notificationPushDeliveryRepository).save(delivery);
+    }
+
+    @Test
+    void transientFirebaseFailure_keepsTokenAndSchedulesRetry() throws Exception {
+        NotificationPushDelivery delivery = delivery();
+        Notification notification = notification();
+        FcmDeviceToken token = activeToken();
+        FirebaseMessagingException exception = firebaseException(MessagingErrorCode.UNAVAILABLE);
+        when(notificationPushDeliveryRepository.findDueByNotificationId(
+                eq(100L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class)
+        )).thenReturn(List.of(delivery));
+        stubReservedDelivery(delivery, notification, token);
+        when(fcmMessageSender.send(any(Message.class))).thenThrow(exception);
+
+        fcmSenderService.dispatchPendingDeliveries(100L);
+
+        assertThat(token.isActive()).isTrue();
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.PENDING);
+        assertThat(delivery.getErrorCode()).isEqualTo("UNAVAILABLE");
+        assertThat(delivery.getNextAttemptAt()).isAfter(LocalDateTime.now());
+        verify(fcmDeviceTokenRepository, never()).save(any());
+        verify(notificationPushDeliveryRepository).save(delivery);
+    }
+
+    @Test
+    void unexpectedSenderFailure_schedulesUnknownRetry() throws Exception {
+        NotificationPushDelivery delivery = delivery();
+        when(notificationPushDeliveryRepository.findDueByNotificationId(
+                eq(100L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class)
+        )).thenReturn(List.of(delivery));
+        stubReservedDelivery(delivery, notification(), activeToken());
+        when(fcmMessageSender.send(any(Message.class)))
+                .thenThrow(new IllegalStateException("firebase unavailable"));
+
+        fcmSenderService.dispatchPendingDeliveries(100L);
+
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.PENDING);
+        assertThat(delivery.getErrorCode()).isEqualTo("UNKNOWN");
+        assertThat(delivery.getErrorMessage()).isEqualTo("firebase unavailable");
+        assertThat(delivery.getNextAttemptAt()).isNotNull();
+    }
+
+    @Test
+    void reservedDelivery_withoutTargetToken_isSkipped() throws Exception {
+        NotificationPushDelivery delivery = NotificationPushDelivery.builder()
+                .notificationId(100L)
+                .userId(1001L)
+                .fcmDeviceTokenId(null)
+                .build();
+        ReflectionTestUtils.setField(delivery, "id", 300L);
+        when(notificationPushDeliveryRepository.findDueByNotificationId(
+                eq(100L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class)
+        )).thenReturn(List.of(delivery));
+        when(notificationPushDeliveryRepository.reservePendingDelivery(
+                eq(300L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
+        when(notificationPushDeliveryRepository.findById(300L)).thenReturn(Optional.of(delivery));
+        when(notificationRepository.findById(100L)).thenReturn(Optional.of(notification()));
+
+        fcmSenderService.dispatchPendingDeliveries(100L);
+
+        assertThat(delivery.getDeliveryStatus()).isEqualTo(PushDeliveryStatus.SKIPPED);
+        assertThat(delivery.getErrorCode()).isEqualTo("NO_TARGET_TOKEN");
+        verify(fcmMessageSender, never()).send(any());
+    }
+
+    private NotificationPushDelivery delivery() {
+        NotificationPushDelivery delivery = NotificationPushDelivery.builder()
+                .notificationId(100L)
+                .userId(1001L)
+                .fcmDeviceTokenId(200L)
+                .build();
+        ReflectionTestUtils.setField(delivery, "id", 300L);
+        return delivery;
+    }
+
+    private Notification notification() {
+        return Notification.builder()
+                .userId(1001L)
+                .notificationType(NotificationType.MISSION)
+                .title("title")
+                .message("message")
+                .pushRequired(true)
+                .build();
+    }
+
+    private FcmDeviceToken activeToken() {
+        FcmDeviceToken token = FcmDeviceToken.builder()
+                .userId(1001L)
+                .fcmToken("active-token")
+                .tokenHash("active-hash")
+                .platform(FcmPlatform.WEB)
+                .build();
+        ReflectionTestUtils.setField(token, "id", 200L);
+        return token;
+    }
+
+    private void stubReservedDelivery(
+            NotificationPushDelivery delivery,
+            Notification notification,
+            FcmDeviceToken token
+    ) {
+        when(notificationPushDeliveryRepository.reservePendingDelivery(
+                eq(300L),
+                eq(PushDeliveryStatus.PENDING),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
+        when(notificationPushDeliveryRepository.findById(300L)).thenReturn(Optional.of(delivery));
+        when(notificationRepository.findById(100L)).thenReturn(Optional.of(notification));
+        when(fcmDeviceTokenRepository.findById(200L)).thenReturn(Optional.of(token));
+    }
+
+    private FirebaseMessagingException firebaseException(MessagingErrorCode errorCode) {
+        FirebaseMessagingException exception = mock(FirebaseMessagingException.class);
+        when(exception.getMessagingErrorCode()).thenReturn(errorCode);
+        when(exception.getMessage()).thenReturn(errorCode.name());
+        return exception;
     }
 }
