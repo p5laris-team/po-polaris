@@ -1,7 +1,7 @@
 # Polaris REST API 명세서
 
-> 기준일: 2026-06-04
-> 기준 문서: Polaris v1.0 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
+> 기준일: 2026-06-15
+> 기준 문서: Polaris v0.9 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
 
 --- 
 
@@ -107,25 +107,25 @@ Base Pattern: /api/{domain}/v1/{resource}
 - 공유 시도 보상 기록
 - 출석 보상 지급
 
-### 0.6 현재 구현 기준
+### 0.6 v0.9 API 기준
 
-아래 표는 2026-06-04 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
+아래 표는 Polaris v0.9 백엔드 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
-| 구분 | 현재 API 기준 | 응답/처리 규칙 |
+| 구분 | v0.9 API | 응답/처리 규칙 |
 |---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
 | 날씨 권역 | `GET /api/user/v1/weather-regions`, `GET/PUT /api/user/v1/users/me/weather-region` | 사용자가 직접 선택한 권역을 날씨 기반 미션 context에 사용한다. 미선택 상태이면 mission 서비스의 기본 권역을 사용한다. |
 | 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `growth`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
-| 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
+| 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
 | 캐릭터 성장/서사 | `GET /api/character/v1/characters/{characterId}/status`, `POST /api/character/v1/characters/{characterId}/interactions` | 상태 조회는 성장 상태를 포함하고, 상호작용은 캐릭터 기억 조각 해금 여부를 반환한다. |
-| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream` | SSE로 `meta`, `delta`, `done` 이벤트를 반환한다. AI provider 실패 시 캐릭터별 fallback 문장으로 종료한다. |
+| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream`, `GET /api/character/v1/characters/{characterId}/talk/messages`, `GET /api/character/v1/characters/{characterId}/talk/diaries` | SSE 대화, 오늘 원문 복원, 날짜별 요약 기록 조회를 제공한다. 세션 기반 멀티턴 맥락, 요약 기억 검색, 일일 대화 제한, provider 실제 token usage를 포함한다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
 | 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
 | 공유 카드 | `GET /api/share/v1/presigned-url`, `POST /api/share/v1/share-cards` | 프론트가 canvas PNG를 presigned URL로 업로드한 뒤, `imageUrl`을 공유 카드 생성 요청에 전달한다. 백엔드는 업로드 URL을 검증하고 DB에는 object key/shareId를 저장한다. |
 | 공유 보상 | `POST /api/share/v1/share-events`, `GET /api/share/v1/share-events/today` | 공유 시도와 일일 보상 여부는 `share_logs` 기준으로 기록한다. 오늘 첫 보상 대상이면 `character_outbox_events`에 `SHARE_REWARD_REQUESTED` 이벤트를 저장한 뒤 커밋 후 user wallet gRPC `EarnStarPiece`를 즉시 호출한다. 성공 시 `wallet.starPiece`에는 적립 후 지갑 잔액을 반환하고, 즉시 지급 실패 시 API는 빠르게 실패하지만 outbox 스케줄러가 재처리한다. |
 | 미션 히스토리/상세/피드백 | `GET /api/mission/v1/missions/history`, `GET /api/mission/v1/missions/{missionId}`, `POST /api/mission/v1/missions/{missionId}/feedback` | 목록은 답변 preview와 답변 존재 여부만 반환하고, 상세는 완료 질문/답변 전문을 반환한다. 만족/불만족 피드백은 미션 개인화 신호로 저장한다. |
-| 알림 | notification 목록/읽음/구독/설정 API | 푸시 발송 여부는 사용자 알림 설정, 방해금지 시간, FCM 토큰 상태에 따라 결정된다. |
+| 알림 | notification 목록/읽음/일괄읽음/구독/설정 API | 푸시 발송 여부는 사용자 알림 설정, 방해금지 시간, FCM 토큰 상태에 따라 결정된다. |
 
 ---
 
@@ -152,6 +152,8 @@ Base Pattern: /api/{domain}/v1/{resource}
 | PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착/해제 | path + body | equipped skin | 🔐 |
 | POST   | `/api/character/v1/characters/{characterId}/interactions`       | 캐릭터 터치/상태 기반 상호작용 및 기억 조각 해금 | path + body | interaction result | 🔐 |
 | POST   | `/api/character/v1/characters/{characterId}/talk/stream`        | 별친구 대화 SSE 스트리밍 | path + body | SSE stream | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/talk/messages`      | 특정 날짜 별친구 대화 원문 조회 | path + query | messages | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/talk/diaries`       | 날짜 범위 별친구 대화 요약 조회 | path + query | diaries | 🔐 |
 | GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
 | GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
@@ -180,10 +182,12 @@ Base Pattern: /api/{domain}/v1/{resource}
 | POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | none | attendance | 🔐 |
 | GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query year, month | attendance list | 🔐 |
 | GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
+| PATCH  | `/api/notification/v1/notifications/read-all`                  | 알림 일괄 읽음 처리   | none | read-all result | 🔐 |
 | PATCH  | `/api/notification/v1/notifications/{notificationId}`           | 알림 읽음 처리      | path + body | notification | 🔐 |
 | POST   | `/api/notification/v1/subscriptions/`                           | FCM 토큰 등록/갱신 | body | subscription | 🔐 |
 | GET    | `/api/notification/v1/settings`                                 | 알림 수신 설정 조회 | none | notification settings | 🔐 |
 | PATCH  | `/api/notification/v1/settings`                                 | 알림 수신 설정 수정 | body | notification settings | 🔐 |
+| GET    | `/api/ad/v1/banner-config`                                     | 광고 배너 설정 조회   | query | banner config | 🔐 |
 | 내부 gRPC | `NotificationService.SendPushNotification`                   | 알림 저장 및 FCM 푸시 발송 요청 | proto | success | Internal |
 | 내부 gRPC | `NotificationService.GetUnreadNotificationCount`             | 홈 화면 안 읽은 알림 수 조회 | proto | unread count | Internal |
 
@@ -198,13 +202,11 @@ Base Pattern: /api/{domain}/v1/{resource}
 **설명**  
 프론트가 Google 로그인 버튼을 눌렀을 때 이동할 OAuth URL을 받는다.
 
-**Request**
+**Request (Query Parameters)**
 
-```json
-{
-  "redirectUri": "https://p5laris.life/oauth/google/callback"
-}
-```
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| redirectUri | String | O | Google OAuth callback 리다이렉트 URI |
 
 **Response**
 
@@ -228,7 +230,8 @@ Google OAuth callback에서 받은 `code`를 서버에 전달하고 서비스 �
 {
   "code": "google-oauth-code",
   "state": "oauth-state-token",
-  "redirectUri": "https://p5laris.life/oauth/google/callback"
+  "redirectUri": "https://p5laris.life/oauth/google/callback",
+  "clientId": "optional-client-id"
 }
 ```
 
@@ -331,13 +334,8 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "reasonCode": "NOT_NOW",
-  "reasonText": "지금은 밖이라서 하기 어려워요."
-}
+{}
 ```
-
-거절 이유는 선택 입력이다. 요청 body를 생략하거나 비워 보내면 서버가 `JUST_SKIP` 기준으로 저장한다.
 
 **Response**
 
@@ -453,6 +451,17 @@ Refresh Token으로 Access Token을 재발급한다.
       "hunger": { "value": 80, "label": "든든함", "grade": "GOOD" },
       "energy": { "value": 55, "label": "졸림", "grade": "NORMAL" },
       "affection": { "value": 35, "label": "쓸쓸함", "grade": "BAD" }
+    },
+    "growth": {
+      "level": 2,
+      "exp": 240,
+      "currentLevelExp": 200,
+      "nextLevelExp": 600,
+      "expToNextLevel": 360,
+      "progressPercent": 10,
+      "growthStage": "GROWING",
+      "growthStageLabel": "자라는 중",
+      "maxLevel": false
     }
   },
   "currentMission": {
@@ -512,9 +521,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "characterTypeId": 1
-}
+{}
 ```
 
 **Response**
@@ -563,6 +570,17 @@ Refresh Token으로 Access Token을 재발급한다.
     "hunger": 70,
     "energy": 70,
     "affection": 50
+  },
+  "growth": {
+    "level": 1,
+    "exp": 0,
+    "currentLevelExp": 0,
+    "nextLevelExp": 200,
+    "expToNextLevel": 200,
+    "progressPercent": 0,
+    "growthStage": "BABY",
+    "growthStageLabel": "새싹",
+    "maxLevel": false
   },
   "createdAt": "2026-05-15T18:00:00+09:00"
 }
@@ -658,9 +676,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "characterId": 10
-}
+{}
 ```
 
 **Response**
@@ -876,16 +892,19 @@ Refresh Token으로 Access Token을 재발급한다.
 **설명**
 별친구에게 말을 걸고 SSE(Server-Sent Events)로 응답을 스트리밍한다. gateway는 character 모듈에서 캐릭터 상태/성장/해금 기억 context를 조회하고, ai 모듈의 `StreamCharacterTalk` gRPC를 호출한다.
 
-대화 원문은 DB에 저장하지 않는다.
+별친구 대화는 세션 단위로 이어진다. 최근 대화 원문은 짧은 멀티턴 맥락을 만들기 위해 제한적으로 저장하고, 오래된 세션은 요약 기억으로 변환해 이후 "아까 말한 거 기억해?" 같은 질문에 사용할 수 있다.
 
 **Request**
 
 ```json
 {
   "message": "나 오늘 너무 힘들었어",
-  "interactionType": "TAP"
+  "interactionType": "TAP",
+  "sessionId": "talk_01HX..."
 }
 ```
+
+`sessionId`는 선택값이다. 값이 없으면 서버는 사용자의 해당 별친구에 대한 활성 세션을 찾고, 없으면 새 세션을 만든다.
 
 **SSE Events**
 
@@ -897,6 +916,28 @@ Refresh Token으로 Access Token을 재발급한다.
   "characterId": 10,
   "characterTypeCode": "MUMU",
   "level": 2,
+  "growth": {
+    "level": 2,
+    "exp": 260,
+    "progressPercent": 15,
+    "growthStage": "GROWING"
+  },
+  "story": {
+    "totalUnlockedCount": 8,
+    "loreUnlockedCount": 3,
+    "easterEggUnlockedCount": 1
+  },
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00",
+  "sessionId": "talk_01HX...",
+  "newSession": false,
+  "expiresAt": "2026-06-04T01:50:00",
+  "historyWindowTurns": 6,
+  "memorySearchTopK": 3,
+  "memoryHitCount": 1,
   "sentAt": "2026-06-04T01:20:00Z"
 }
 ```
@@ -914,9 +955,21 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
-  "fallbackUsed": false
+  "fallbackUsed": false,
+  "sessionId": "talk_01HX...",
+  "actualPromptTokens": 6544,
+  "actualCompletionTokens": 59,
+  "actualTotalTokens": 6603,
+  "memoryHitCount": 1,
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00"
 }
 ```
+
+`actualPromptTokens`, `actualCompletionTokens`, `actualTotalTokens`는 AI provider가 실제 usage metadata를 내려준 경우에만 포함한다.
 
 fallback이 사용된 경우:
 
@@ -924,16 +977,150 @@ fallback이 사용된 경우:
 {
   "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
   "fallbackUsed": true,
-  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR"
+  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR",
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00"
+}
+```
+
+일일 대화 제한을 초과한 경우:
+
+```json
+event: meta
+data: {
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "characterId": 10,
+  "characterTypeCode": "MUMU",
+  "talkStatus": "LIMIT_EXCEEDED",
+  "dailyLimit": 20,
+  "remainingCount": 0,
+  "limitExceeded": true,
+  "resetAt": "2026-06-05T00:00:00+09:00"
+}
+
+event: delta
+data: {
+  "text": "무... 무무. (해석: 무무가 오늘의 별빛 대화는 여기까지 아껴두고, 내일 다시 이야기하자고 하는 것 같아요.)"
+}
+
+event: done
+data: {
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "fallbackUsed": true,
+  "talkStatus": "LIMIT_EXCEEDED",
+  "dailyLimit": 20,
+  "remainingCount": 0,
+  "limitExceeded": true,
+  "resetAt": "2026-06-05T00:00:00+09:00"
 }
 ```
 
 **처리 규칙**
 
 - `delta` 이벤트는 여러 번 올 수 있으며, 프론트는 순서대로 이어 붙여 최종 문장을 만든다.
+- 같은 `sessionId`로 요청하면 같은 세션의 대화 맥락을 이어간다.
+- 세션은 마지막 메시지 기준 30분 동안 활성 상태이며, prompt에는 최근 6턴을 넣는다.
+- 만료된 세션은 요약 memory로 변환하고, 이후 대화에서 최대 3개까지 유사도 검색 context로 사용한다.
+- 원문 메시지는 단기 맥락 용도이며 장기 기억에는 요약만 남긴다.
+- AI provider가 실제 token usage metadata를 제공하면 `done` 이벤트에 실제 토큰 수를 포함하고 세션 누적량에 반영한다. 실제값이 없으면 토큰 필드는 내려주지 않는다.
 - AI provider 오류, timeout, 출력 검증 실패가 발생하면 gateway 또는 ai 모듈에서 캐릭터별 fallback 문장을 내려준다.
 - 무무 응답은 무무 말투와 해석을 함께 포함한다.
+- 일일 대화 제한은 사용자 기준 하루 20회다. Redis 장애 시 fail closed로 처리하되, 프론트에는 캐릭터별 안내 문장을 스트리밍한다.
 - gateway의 SSE 연결 timeout은 `GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS`, AI gRPC deadline은 `GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS`, prompt에 넣는 기억 조각 수는 `GATEWAY_CHARACTER_TALK_MEMORY_LIMIT`로 조절한다.
+- ai 모듈의 세션 TTL, history window, memory search topK, 원문 메시지/세션 보관 기간은 `AI_CHARACTER_TALK_*` 환경변수로 조절한다.
+
+---
+
+### 4.11 GET `/api/character/v1/characters/{characterId}/talk/messages` 🔐
+
+**설명**
+특정 날짜의 별친구 대화 원문을 시간순으로 조회한다. 화면을 나갔다가 돌아와도 오늘 나눈 대화를 복원하기 위한 계약이다.
+
+원문 메시지는 단기 맥락과 당일 복원용이다. 기본 보관 기간은 24시간이며, 장기 회고 화면은 원문 전체가 아니라 요약 기록 API를 사용한다.
+
+**Request**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| date | `yyyy-MM-dd` | X | 조회 날짜. 생략하면 서버 기준 오늘 |
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "date": "2026-06-09",
+  "latestSessionId": "talk_01HX...",
+  "messages": [
+    {
+      "role": "user",
+      "content": "나 오늘 회사 다녀와서 너무 힘들었어",
+      "sequence": 1,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:01.123",
+      "sessionId": "talk_01HX..."
+    },
+    {
+      "role": "assistant",
+      "content": "무... 무무. (해석: 무무가 오늘 많이 힘들었다는 걸 기억한다고 하는 것 같아요.)",
+      "sequence": 2,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:04.456",
+      "sessionId": "talk_01HX..."
+    }
+  ]
+}
+```
+
+**정책**
+
+- 로그인 사용자와 `characterId` 기준으로만 조회한다.
+- 같은 세션 안 메시지는 `sequence` 오름차순으로 정렬한다.
+- 세션이 여러 개이면 `createdAt`, `sessionId`, `sequence` 기준으로 시간순 정렬한다.
+- `latestSessionId`는 프론트가 이어 말하기 요청에 사용할 수 있는 가장 최근 세션 ID다. 대화가 없으면 빈 문자열이다.
+
+---
+
+### 4.12 GET `/api/character/v1/characters/{characterId}/talk/diaries` 🔐
+
+**설명**
+날짜 범위의 별친구 대화 요약 기록을 조회한다. 사용자가 과거의 감정 흐름을 일기처럼 돌아볼 수 있도록, 만료된 대화 세션의 요약 memory를 반환한다.
+
+**Request**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| from | `yyyy-MM-dd` | X | 시작 날짜. 생략하면 `to - 6일` |
+| to | `yyyy-MM-dd` | X | 종료 날짜. 생략하면 서버 기준 오늘 |
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09",
+  "items": [
+    {
+      "date": "2026-06-08",
+      "summary": "이전 대화 요약: 사용자: 회사 다녀와서 많이 지쳤다고 말했다. 별친구: 쉬어도 괜찮다고 위로했다.",
+      "sourceSessionId": 42,
+      "createdAt": "2026-06-08T23:45:10.123"
+    }
+  ]
+}
+```
+
+**정책**
+
+- 한 번에 조회할 수 있는 기간은 최대 31일이다.
+- 원문 전체가 아니라 `SESSION_SUMMARY` memory를 반환한다.
+- 요약 생성 전인 활성 세션은 `talk/messages`에서 조회하고, 만료 후 요약된 세션은 `talk/diaries`에서 조회한다.
 
 ---
 
@@ -953,21 +1140,19 @@ fallback이 사용된 경우:
 **Response**
 
 ```json
-{
-  "items": [
-    {
-      "key": "ROUTINE_GOAL",
-      "content": "지금 만들고 싶은 루틴은 무엇인가요?",
-      "multipleSelection": true,
-      "maxSelectionCount": 3,
-      "options": [
-        { "key": "HYDRATION_MEAL", "value": "물/식사 챙기기" },
-        { "key": "SPACE_RESET", "value": "공간 가볍게 정리하기" },
-        { "key": "EXERCISE_HABIT", "value": "운동 습관 만들기" }
-      ]
-    }
-  ]
-}
+[
+  {
+    "key": "ROUTINE_GOAL",
+    "content": "지금 만들고 싶은 루틴은 무엇인가요?",
+    "multipleSelection": true,
+    "maxSelectionCount": 3,
+    "options": [
+      { "key": "HYDRATION_MEAL", "value": "물/식사 챙기기" },
+      { "key": "SPACE_RESET", "value": "공간 가볍게 정리하기" },
+      { "key": "EXERCISE_HABIT", "value": "운동 습관 만들기" }
+    ]
+  }
+]
 ```
 
 ---
@@ -1037,8 +1222,19 @@ fallback이 사용된 경우:
 ```json
 {
   "completed": true,
-  "missionAvailable": true,
-  "completedAt": "2026-05-15T18:10:00+09:00"
+  "livingType": null,
+  "wakeUpTime": null,
+  "sleepTime": null,
+  "preferredMissionTime": null,
+  "routineGoal": null,
+  "activityPreference": null,
+  "missionIntensity": "LIGHT",
+  "answersJson": "{\"onboardingVersion\":2}",
+  "onboardingVersion": 2,
+  "routineGoals": ["HYDRATION_MEAL", "SPACE_RESET"],
+  "preferredTimeSlots": ["EVENING", "NIGHT"],
+  "missionPlaceContexts": ["HOME"],
+  "avoidedMissionTags": ["OUTDOOR"]
 }
 ```
 
@@ -1402,6 +1598,35 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
   "wallet": {
     "starPiece": 127
   },
+  "rewardStatus": "SUCCESS",
+  "characterExp": {
+    "expAmount": 200,
+    "expGained": 10,
+    "levelUp": false,
+    "status": "SUCCESS",
+    "beforeGrowth": {
+      "level": 1,
+      "exp": 190,
+      "currentLevelExp": 0,
+      "nextLevelExp": 200,
+      "expToNextLevel": 10,
+      "progressPercent": 95,
+      "growthStage": "BABY",
+      "growthStageLabel": "새싹",
+      "maxLevel": false
+    },
+    "afterGrowth": {
+      "level": 1,
+      "exp": 200,
+      "currentLevelExp": 0,
+      "nextLevelExp": 200,
+      "expToNextLevel": 0,
+      "progressPercent": 100,
+      "growthStage": "BABY",
+      "growthStageLabel": "새싹",
+      "maxLevel": false
+    }
+  },
   "characterMessage": "작은 정리도 오늘의 별조각으로 남겨둘게."
 }
 ```
@@ -1563,7 +1788,7 @@ mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한
 ### 6.9 내부 gRPC `AiService.StreamCharacterTalk`
 
 **설명**
-별친구 대화 응답을 provider streaming으로 생성한다. gateway는 REST SSE 계약을 유지하고, ai 모듈은 gRPC server streaming으로 `DELTA`, `DONE`, `ERROR` 이벤트를 반환한다.
+별친구 대화 응답을 provider streaming으로 생성한다. gateway는 REST SSE 계약을 유지하고, ai 모듈은 gRPC server streaming으로 `META`, `DELTA`, `DONE`, `ERROR` 이벤트를 반환한다.
 
 AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. Tool 호출 실패는 대화 전체 실패가 아니라 해당 context를 사용할 수 없는 상태로 prompt에 반영한다.
 
@@ -1587,16 +1812,18 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
   "userMessage": "나 오늘 너무 힘들었어",
   "interactionType": "TAP",
   "characterContextJson": "{\"growth\":{\"level\":2},\"memories\":[...]}",
-  "requestId": "CHARACTER_TALK:..."
+  "requestId": "CHARACTER_TALK:...",
+  "sessionId": "talk_01HX..."
 }
 ```
 
 **gRPC Stream Response**
 
 ```json
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_META", "requestId": "CHARACTER_TALK:...", "sessionId": "talk_01HX...", "newSession": false, "expiresAt": "2026-06-04T01:50:00", "historyWindowTurns": 6, "memorySearchTopK": 3, "memoryHitCount": 1 }
 { "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": "무... 무무.", "requestId": "CHARACTER_TALK:..." }
 { "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": " (해석: 무무가", "requestId": "CHARACTER_TALK:..." }
-{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DONE", "fallbackUsed": false, "requestId": "CHARACTER_TALK:..." }
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DONE", "fallbackUsed": false, "requestId": "CHARACTER_TALK:...", "sessionId": "talk_01HX...", "actualPromptTokens": 6544, "actualCompletionTokens": 59, "actualTotalTokens": 6603, "memoryHitCount": 1 }
 ```
 
 오류 또는 검증 실패 시:
@@ -1606,7 +1833,91 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
   "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR",
   "fallbackUsed": true,
   "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR",
-  "requestId": "CHARACTER_TALK:..."
+  "requestId": "CHARACTER_TALK:...",
+  "sessionId": "talk_01HX..."
+}
+```
+
+**멀티턴 / 기억 정책**
+
+- 요청의 `sessionId`가 유효한 활성 세션이면 해당 세션을 이어간다.
+- `sessionId`가 비어 있거나 만료됐으면 새 세션을 만든다.
+- 활성 세션 prompt에는 최근 6턴만 넣어 토큰 사용량을 제한한다.
+- 만료 세션은 요약 후 `character_talk_memories`에 768차원 embedding으로 저장한다.
+- 새 대화에서 사용자 메시지와 유사한 memory를 최대 3개 검색해 prompt에 넣는다.
+- provider가 실제 token usage를 내려주면 `actual_prompt_tokens`, `actual_completion_tokens`, `actual_total_tokens`를 세션에 누적한다. 실제값이 없으면 null로 둔다.
+
+---
+
+### 6.10 내부 gRPC `AiService.GetCharacterTalkMessages`
+
+**설명**
+gateway가 특정 날짜의 별친구 원문 대화를 조회할 때 사용한다.
+
+**Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "date": "2026-06-09"
+}
+```
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "date": "2026-06-09",
+  "latestSessionId": "talk_01HX...",
+  "messages": [
+    {
+      "role": "user",
+      "content": "나 오늘 너무 힘들었어",
+      "sequence": 1,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:01.123",
+      "sessionId": "talk_01HX..."
+    }
+  ]
+}
+```
+
+---
+
+### 6.11 내부 gRPC `AiService.GetCharacterTalkDiaries`
+
+**설명**
+gateway가 날짜 범위의 별친구 대화 요약 기록을 조회할 때 사용한다.
+
+**Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09"
+}
+```
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09",
+  "items": [
+    {
+      "date": "2026-06-08",
+      "summary": "이전 대화 요약: 사용자: 회사 다녀와서 많이 지쳤다고 말했다. 별친구: 쉬어도 괜찮다고 위로했다.",
+      "sourceSessionId": 42,
+      "createdAt": "2026-06-08T23:45:10.123"
+    }
+  ]
 }
 ```
 
@@ -1887,9 +2198,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 **Request**
 
 ```json
-{
-  "shareCardId": 800
-}
+{}
 ```
 
 **Response**
@@ -1929,6 +2238,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
   "shareEventId": 810,
   "rewardPaid": true,
   "rewardStarPiece": 10,
+  "rewardStatus": "SUCCESS",
   "wallet": {
     "starPiece": 110
   }
@@ -1954,7 +2264,8 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 ```json
 {
   "rewardClaimed": true,
-  "lastSharedAt": "2026-05-19T09:22:24.400Z"
+  "lastSharedAt": "2026-05-19T09:22:24.400Z",
+  "rewardStatus": "SUCCESS"
 }
 ```
 
@@ -1968,9 +2279,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 **Request**
 
 ```json
-{
-  "shareId": "sh_abc123"
-}
+{}
 ```
 
 **Response**
@@ -1990,7 +2299,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 ### 9.7 POST `/api/share/v1/share-clicks` Public
 
 **설명**
-공개 공유 링크 클릭을 기록한다. 현재 구현은 클릭 정보를 로그로 남기고 `recorded=true`를 반환한다.
+공개 공유 링크 클릭을 기록한다. 클릭 정보는 DB 테이블 없이 애플리케이션 로그로 남기고 `recorded=true`를 반환한다.
 
 **Request**
 
@@ -2066,14 +2375,12 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 **설명**  
 달력 UI에 매칭하기 위해 특정 월(Month)의 내 출석 기록 리스트를 조회한다.
 
-**Request**
+**Request (Query Parameters)**
 
-```json
-{
-  "year": 2026,
-  "month": 5
-}
-```
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| year | int | O | 조회 연도 (예: 2026) |
+| month | int | O | 조회 월 (1 ~ 12) |
 
 **Response**
 
@@ -2105,15 +2412,13 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 **설명**  
 앱 내부 알림 목록을 조회한다.
 
-**Request**
+**Request (Query Parameters)**
 
-```json
-{
-  "read": false,
-  "cursor": null,
-  "size": 20
-}
-```
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| read | Boolean | X | 읽음 여부 필터링 (true/false) |
+| cursor | Long | X | 직전 응답의 pageInfo.nextCursor 값 (첫 페이지는 생략) |
+| size | Integer | X | 페이지 크기 (기본값 20) |
 
 **Response**
 
@@ -2141,7 +2446,30 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 
 ---
 
-### 11.2 PATCH `/api/notification/v1/notifications/{notificationId}` 🔐
+### 11.2 PATCH `/api/notification/v1/notifications/read-all` 🔐
+
+**설명**  
+로그인한 사용자의 읽지 않은 모든 알림을 일괄 읽음 처리한다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "updatedCount": 5,
+  "unreadCount": 0,
+  "updatedAt": "2026-06-15T09:31:48+09:00"
+}
+```
+
+---
+
+### 11.3 PATCH `/api/notification/v1/notifications/{notificationId}` 🔐
 
 **설명**  
 알림을 읽음 처리한다.
@@ -2166,7 +2494,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 
 ---
 
-### 11.3 POST `/api/notification/v1/subscriptions/` 🔐
+### 11.4 POST `/api/notification/v1/subscriptions/` 🔐
 
 **설명**  
 FCM 푸시 알림을 허용하고 토큰을 저장해 구독을 시작한다. 같은 토큰이 다시 들어오면 기존 토큰 정보를 갱신한다.
@@ -2190,7 +2518,7 @@ FCM 푸시 알림을 허용하고 토큰을 저장해 구독을 시작한다. �
 
 ---
 
-### 11.4 GET `/api/notification/v1/settings` 🔐
+### 11.5 GET `/api/notification/v1/settings` 🔐
 
 **설명**
 로그인한 사용자의 알림 수신 설정을 조회한다. 설정 row가 아직 없으면 기본 설정을 반환한다.
@@ -2217,7 +2545,7 @@ FCM 푸시 알림을 허용하고 토큰을 저장해 구독을 시작한다. �
 
 ---
 
-### 11.5 PATCH `/api/notification/v1/settings` 🔐
+### 11.6 PATCH `/api/notification/v1/settings` 🔐
 
 **설명**
 알림 수신 설정을 갱신한다. 모든 필드를 함께 전달한다. 시간 필드는 `HH:mm` 형식이다.
@@ -2252,7 +2580,7 @@ FCM 푸시 알림을 허용하고 토큰을 저장해 구독을 시작한다. �
 
 ---
 
-### 11.6 내부 gRPC `NotificationService.SendPushNotification`
+### 11.7 내부 gRPC `NotificationService.SendPushNotification`
 
 **설명**
 mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을 요청할 때 사용한다. notification 서비스는 먼저 `notifications` row를 만들고, FCM 발송은 `notification_push_deliveries`에 시도 결과를 남긴다.
@@ -2280,7 +2608,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 
 ---
 
-### 11.7 내부 gRPC `NotificationService.GetUnreadNotificationCount`
+### 11.8 내부 gRPC `NotificationService.GetUnreadNotificationCount`
 
 **설명**
 홈 통합 조회에서 `notifications.unreadCount`를 채우기 위해 gateway가 notification 서비스에 요청하는 내부 gRPC API다. 별도 외부 REST endpoint로 노출하지 않는다.
@@ -2303,9 +2631,46 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 
 ---
 
-## 12. 주요 상태 / Enum
+## 12. 광고
 
-### 12.1 미션 상태
+### 12.1 GET `/api/ad/v1/banner-config` 🔐
+
+**설명**  
+사용자의 광고 배너 노출 설정을 조회한다.
+
+**Request (Query Parameters)**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| placement | String | O | 광고 배치 영역 코드 (예: HOME, MISSION_DETAIL) |
+| path | String | X | 현재 위치한 클라이언트 앱 내의 화면 경로 |
+
+**Response**
+
+```json
+{
+  "enabled": true,
+  "placement": "HOME",
+  "provider": "ADMOB",
+  "clientId": "ca-app-pub-3940256099942544",
+  "slotId": "ca-app-pub-3940256099942544/6300978111",
+  "format": "BANNER",
+  "layout": "BOTTOM_FIXED",
+  "refreshSeconds": 60,
+  "reservedHeightPx": 50,
+  "policy": {
+    "hideOnPaidUser": true,
+    "hideOnKeyboardVisible": true,
+    "hideOnSensitiveScreen": false
+  }
+}
+```
+
+---
+
+## 13. 주요 상태 / Enum
+
+### 13.1 미션 상태
 
 | 상태 | 의미 |
 |---|---|
@@ -2316,7 +2681,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `REJECTED` | 사용자가 거절 |
 | `EXPIRED` | 날짜 변경 등으로 만료 |
 
-### 12.2 캐릭터 상태
+### 13.2 캐릭터 상태
 
 | 필드 | 의미 | 화면 라벨 예시 |
 |---|---|---|
@@ -2324,7 +2689,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `energy` | 높을수록 기운 있음 | 말짱함 / 졸림 / 피곤함 |
 | `affection` | 높을수록 가까움 | 가까움 / 조용함 / 쓸쓸함 |
 
-### 12.2.1 캐릭터 성장 / 서사 / 대화
+### 13.2.1 캐릭터 성장 / 서사 / 대화
 
 | 구분 | 값 | 의미 |
 |---|---|---|
@@ -2345,7 +2710,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | SSE event | `delta` | 이어 붙일 응답 조각 |
 | SSE event | `done` | 스트림 종료 메타데이터 |
 
-### 12.3 아이템
+### 13.3 아이템
 
 | 필드 | 값 |
 |---|---|
@@ -2353,7 +2718,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `effectType` | `FOOD`, `REST`, `PLAY` |
 | `actionType` | `FEED`, `SLEEP`, `PLAY` |
 
-### 12.4 별조각 거래 사유
+### 13.4 별조각 거래 사유
 
 | reason | 설명 |
 |---|---|
@@ -2363,7 +2728,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `SHARE_REWARD` | 공유 시도 보상 |
 | `CARE_ACTION` | 별조각 직접 차감형 돌봄 정책 도입 시 사용. 현재 돌봄은 소모품 수량 차감 기준 |
 
-### 12.5 AI 문구 생성 상태
+### 13.5 AI 문구 생성 상태
 
 | 상태 | 의미 |
 |---|---|
@@ -2371,7 +2736,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `FALLBACK` | 생성 결과를 사용할 수 없어 미션 템플릿 fallback 문구 사용 |
 | `FAILED` | 문구 생성 실패 |
 
-### 12.6 AI 에러 타입
+### 13.6 AI 에러 타입
 
 | 타입 | 의미 |
 |---|---|
@@ -2385,7 +2750,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 
 ---
 
-## 13. 주요 에러 코드
+## 14. 주요 에러 코드
 
 | 코드 | 상황 |
 |---|---|
@@ -2405,6 +2770,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `MISSION_ALREADY_COMPLETED` | 이미 완료된 미션 |
 | `MISSION_ANSWER_INVALID` | 완료 답변 길이 오류 |
 | `MISSION_FEEDBACK_INVALID` | 미션 피드백 형식 오류 |
+| `MISSION_REWARD_FAILED` | 미션 완료 보상 지급 실패 |
 | `MISSION_SERVICE_UNAVAILABLE` | 미션 서비스 일시 장애 |
 | `STAR_PIECE_NOT_ENOUGH` | 별조각 부족 |
 | `DUPLICATED_IDEMPOTENCY_KEY` | 중복 요청 |
@@ -2412,6 +2778,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `ITEM_ALREADY_OWNED` | 이미 보유한 장착형 아이템 |
 | `ITEM_NOT_OWNED` | 보유하지 않은 아이템 |
 | `ITEM_QUANTITY_NOT_ENOUGH` | 소모품 수량 부족 |
+| `USER_ITEM_NOT_FOUND` | 보유한 아이템을 찾을 수 없음 |
 | `ATTENDANCE_ALREADY_CHECKED` | 오늘 출석 완료 |
 | `SHARE_REWARD_ALREADY_PAID` | 오늘 공유 시도 보상 대상 기록 완료 |
 | `AI_INVALID_REQUEST` | AI 문구 생성 요청 값 오류 |
@@ -2423,3 +2790,15 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 
 
 
+
+
+---
+
+## N. 신규 동기화된 엔드포인트 (Auto-extracted)
+
+| Method | Endpoint | 설명 | Request | Response | 인증 |
+|--------|----------|------|---------|----------|------|
+| GET | `/api/payment/v1/config` | (Auto-extracted from `PaymentController`) | | | |
+| POST | `/api/payment/v1/orders` | (Auto-extracted from `PaymentController`) | | | |
+| POST | `/api/payment/v1/completes` | (Auto-extracted from `PaymentController`) | | | |
+| GET | `/api/auth/v1/test/token` | (Auto-extracted from `TestTokenController`) | | | |
