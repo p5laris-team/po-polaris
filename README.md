@@ -1,12 +1,9 @@
-<img src="docs/images/polaris-banner.png" width="100%" alt="Polaris Banner">
-  <br /><br />
-
 <div align="center">
   <h1 style="border-bottom: none; font-size: 2.5em; font-weight: bold;">
-    <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Polaris
+    <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Po-Polaris
   </h1>
   <p style="color: #8b949e; font-size: 1.2em; letter-spacing: 2px;">
-    <b>AI CHARACTER ROUTINE MAKER</b>
+    <b>AI CHARACTER ROUTINE MAKER (Advanced Architecture Project)</b>
   </p>
   <br />
   <hr style="background: linear-gradient(to right, transparent, #30363d, transparent); height: 1px; border: none;" />
@@ -17,6 +14,7 @@
   <img src="https://img.shields.io/badge/Java%2021-ED8B00?style=flat-square&logo=openjdk&logoColor=white">
   <img src="https://img.shields.io/badge/Spring%20Boot%203.x-6DB33F?style=flat-square&logo=springboot&logoColor=white">
   <img src="https://img.shields.io/badge/gRPC-244C5A?style=flat-square&logo=grpc&logoColor=white">
+  <img src="https://img.shields.io/badge/Apache%20Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white">
   <br>
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white">
   <img src="https://img.shields.io/badge/pgvector-336791?style=flat-square&logo=postgresql&logoColor=white">
@@ -32,36 +30,45 @@
 
 ## 📌 프로젝트 소개
 
-**Polaris**는 AI 캐릭터와 상호작용하며 건강한 일상 루틴을 만들어가는 **차세대 루틴 메이커 서비스**입니다.  
-단순한 체크리스트를 넘어, **맞춤형 동적 미션 생성 및 보상 트랜잭션 검증**을 통해 확장성 높고 안정적인 마이크로서비스(MSA)를 지향합니다.
+**po-polaris**는 현재 운영 중인 상용 서비스 **Polaris**의 구조적 한계를 극복하고 대규모 트래픽 및 확장성에 대비하기 위해 진행된 **아키텍처 고도화 포트폴리오 프로젝트**입니다.
+
+기존 라이브 서비스(운영계) 환경에서는 다운타임 위험으로 인해 시도하기 어려웠던 **모놀리식 분해(MSA 전환), 이벤트 기반 아키텍처(EDA) 도입, 부하/장애 테스트** 등의 과감한 엔지니어링 챌린지를 독립된 환경에서 실험하고 검증하는 데 목적이 있습니다.
 
 ---
 
-#### 🤖 AI 기반 동적 미션 (AI-Driven Missions)
-* **상황 맞춤 제안:** Google Gemini를 활용해 유저의 시간/장소 컨텍스트에 맞는 새로운 루틴 미션 생성
-* **피드백 학습:** 거절 사유를 수집하여 다음 번 미션 제안의 정확도와 개인화 수준 향상
-* **대화형 완료:** 단순 클릭 완료가 아닌 AI와의 질문/답변 세션을 통한 성취감 제공
+## 🛠 아키텍처 고도화 핵심 과제
 
-#### 👾 캐릭터 및 상호작용 (Character & Interaction)
-* **실시간 딥톡:** SSE(Server-Sent Events)를 활용한 지연 없는 캐릭터 AI 스트리밍 대화
-* **장기 기억 장착:** pgvector를 활용해 과거 대화를 벡터로 저장 및 유사도 검색(RAG) 적용
-* **성장 시스템:** 밥 주기, 재우기 등 돌봄 액션을 통한 상태(포만감/에너지/애정도) 및 레벨 관리
+기존 운영 환경에서 겪었던 병목과 문제점들을 다음과 같은 기술적 시도로 해결했습니다.
 
-#### 💎 별조각 경제 및 보상 (Star Piece Economy)
-* **보상 트랜잭션:** Outbox Pattern과 멱등키를 활용하여 네트워크 장애 시에도 중복 지급 없는 안전한 재화(별조각) 관리
-* **아이템 상점:** 획득한 별조각으로 돌봄 아이템 구매 및 인벤토리 관리
-* **커스텀 스킨:** 캐릭터 외형을 꾸미고 뷰티 스킨 적용 가능
+#### 1️⃣ MSA 분산 환경 및 gRPC 고속 통신망 구축
+* **문제:** 단일 서버 내에서 AI 연산 스레드 점유로 인해 일반 API 요청까지 지연되는 병목 발생.
+* **해결:** 시스템을 8개의 마이크로서비스로 분리(AI, Mission, User 등)하여 부하를 격리하고, 내부 통신은 REST 대신 HTTP/2 기반의 **gRPC**를 채택해 고속 바이너리 직렬화 통신망을 구축했습니다.
+
+#### 2️⃣ 분산 트랜잭션 유실 방지 (Kafka & Outbox Pattern)
+* **문제:** 미션 완료 시 포인트(별조각)를 지급하는 과정에서 네트워크 장애 발생 시 데이터가 유실되거나 보상이 중복 지급되는 현상.
+* **해결:** 메인 비즈니스 로직과 이벤트 발행을 분리하여 **Apache Kafka** 메시지 브로커를 도입했습니다. 로컬 DB 기반의 **Outbox Pattern**과 `Idempotency-Key` 검증을 적용해 Eventual Consistency(최종 일관성)와 멱등성을 완벽히 보장했습니다.
+
+#### 3️⃣ 대규모 부하 시뮬레이션 및 장애 복원력 (Resilience)
+* **문제:** 트래픽 스파이크 시 외부 결제 API나 AI API 지연이 전체 시스템의 장애로 전파(Cascading Failure).
+* **해결:** 런칭 전 예상되는 트래픽을 **k6**를 이용해 시뮬레이션(Stress/Load Test)했습니다. 외부 API 구간에는 **Resilience4j**를 이용해 서킷 브레이커(Circuit Breaker)를 설정함으로써 시스템의 내결함성을 확보했습니다.
+
+#### 4️⃣ 실시간 LLM 스트리밍 최적화 (SSE)
+* **문제:** 캐릭터 AI와의 대화 시 LLM 응답 대기 시간이 길어 유저 경험이 크게 저하됨.
+* **해결:** 생성형 AI 응답 체계를 **SSE(Server-Sent Events)** 기반 단방향 스트리밍으로 전면 개편하여 지연 없이 즉각적으로 글자가 타이핑되는 딥톡 환경을 구현했습니다.
+
+#### 5️⃣ 무결성 기반 인앱 결제 (PortOne)
+* **해결:** 포트원(PortOne) 결제 솔루션을 연동하며, Webhook 위변조 검증과 DB Lock을 결합한 멱등성 로직을 구현하여 캐시 충전 생태계의 안전성을 극대화했습니다.
 
 ---
 
 ## 👥 팀소개
 
-| 이름  | 역할 | 담당                                                          |
-|-----|----|-------------------------------------------------------------|
-| 김소현 | 팀장 | 인증 인가, 온보딩, 상점 경제 시스템, 동시성/멱등성 제어, 모니터링                     |
-| 성기찬 | 팀원 | MSA 인프라 구축, Gateway 라우팅, gRPC 공통 모듈, CI/CD 자동화, 알림 시스템(FCM) |
-| 박현지 | 팀원 | Gemini 프롬프트 엔지니어링, SSE 스트리밍, 미션 상태 머신                       |
-| 강태훈 | 팀원 | 캐릭터 관리, 캐릭터 카드 공유, 배너 광고                                    |
+| 이름  | 역할 | 담당                                                             |
+|-----|----|----------------------------------------------------------------|
+| 김소현 | 팀장 | 인증/인가, 상점 경제 및 결제 시스템(PortOne) 연동, 동시성/멱등성 제어, k6 부하 테스트 및 장애 복원력 검증 |
+| 성기찬 | 팀원 | MSA 인프라 분리, Gateway 라우팅, Kafka 이벤트 브로커, gRPC 공통 모듈, CI/CD 자동화  |
+| 박현지 | 팀원 | Gemini 기반 AI 프롬프트 엔지니어링, SSE 스트리밍 통신 개편, 벡터 임베딩(pgvector) 검색 최적화 |
+| 강태훈 | 팀원 | 캐릭터 상태 머신 로직 고도화, 테스트 코드 작성   |
 
 <br>
 
@@ -69,12 +76,12 @@
 
 ---
 
-## ⏲️ 개발기간
+## ⏲️ 개발기간 (고도화 프로젝트)
 - 2026.05.12(화) ~ 2026.06.22(월)
 
 ---
 
-## 🧩 Architecture
+## 🧩 Architecture (MSA)
 
 <p align="center">
   <img src="" width="100%" alt="Architecture">
@@ -90,6 +97,7 @@
   <img src="https://img.shields.io/badge/Spring%20Boot%203.x-6DB33F?style=for-the-badge&logo=springboot&logoColor=white">
   <img src="https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=for-the-badge&logo=spring&logoColor=white">
   <img src="https://img.shields.io/badge/gRPC-244C5A?style=for-the-badge&logo=grpc&logoColor=white">
+  <img src="https://img.shields.io/badge/Apache%20Kafka-231F20?style=for-the-badge&logo=apachekafka&logoColor=white">
 </p>
 
 #### 💾 Data & Infrastructure
@@ -104,6 +112,7 @@
 <p align="left">
   <img src="https://img.shields.io/badge/Google%20Gemini-4285F4?style=for-the-badge&logo=google&logoColor=white">
   <img src="https://img.shields.io/badge/FCM-FFCA28?style=for-the-badge&logo=firebase&logoColor=white">
+  <img src="https://img.shields.io/badge/PortOne-000000?style=for-the-badge&logo=portone&logoColor=white">
 </p>
 
 #### 🧪 Quality & DevOps
@@ -111,79 +120,51 @@
   <img src="https://img.shields.io/badge/Nx%20Monorepo-143055?style=for-the-badge&logo=nx&logoColor=white">
   <img src="https://img.shields.io/badge/Gradle-02303A?style=for-the-badge&logo=gradle&logoColor=white">
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white">
+  <img src="https://img.shields.io/badge/k6-7D64FF?style=for-the-badge&logo=k6&logoColor=white">
+  <img src="https://img.shields.io/badge/Testcontainers-ffffff?style=for-the-badge&logo=testcontainers&logoColor=black">
   <img src="https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white">
   <img src="https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white">
+  <img src="https://img.shields.io/badge/Sentry-362D59?style=for-the-badge&logo=sentry&logoColor=white">
 </p>
 
 ---
 
-## 🧠 적용 기술
+## 🚀 서비스 비즈니스 기능
 
-#### ◻ **MSA & gRPC 통신**
-> 단일 서버의 AI 스레드 점유로 인한 병목을 해소하기 위해 8개의 마이크로서비스로 분리하였으며, 내부 통신은 REST 대신 HTTP/2 기반의 gRPC를 채택하여 고속 바이너리 직렬화를 구현했습니다.
+고도화된 인프라 위에서 구동되는 메인 도메인 기능들입니다. 기존 MVP 모델에서 확장된 다양한 비즈니스 로직을 포함하고 있습니다.
 
-#### ◻ **보상 트랜잭션 (Outbox Pattern)**
-> 미션 완료 시 별조각 보상 및 경험치 지급 과정에서 네트워크 장애가 발생하더라도 데이터가 유실되지 않도록 이벤트 테이블을 활용한 Outbox Pattern과 `Idempotency-Key` 검증을 적용했습니다.
+#### 👤 맞춤형 온보딩 및 회원 관리
+- **라이프스타일 프로파일링:** `OnboardingProfile`을 통해 유저의 수면 패턴, 직업, 관심사를 수집하여 초개인화된 미션 추천의 토대 마련.
+- **데일리 리텐션 유도:** `AttendanceRecord` 기반의 연속 출석 체크 시스템 및 누적 보상 지급 로직.
 
-#### ◻ **SSE (Server-Sent Events) 스트리밍**
-> LLM 텍스트 생성의 높은 지연율을 해결하기 위해 캐릭터 AI 응답을 단방향 스트리밍(SSE)으로 클라이언트에 즉각 푸시하여 실시간성을 극대화했습니다.
+#### 🎯 동적 미션 체계 & 인증 로직
+- **컨텍스트 맞춤 미션 할당:** 시간, 날씨, 유저 성향에 맞춘 데일리 미션 자동 생성 및 상태 관리.
+- **대화형 결과 인증:** 단순 버튼 클릭이 아닌, 수행 내용에 대한 `MissionCompletionAnswer` 제출 시 AI가 내용의 적절성을 판별해 피드백(`MissionFeedback`) 제공.
 
-#### ◻ **벡터 유사도 검색 (pgvector)**
-> 사용자와의 대화 내역을 요약 및 임베딩 벡터로 변환하여 PostgreSQL에 저장하고, 다음 대화 시 코사인 유사도 기반으로 과거 기억을 검색(RAG)해 페르소나의 일관성을 유지합니다.
+#### 👾 캐릭터 육성 및 딥톡 (Deep Talk)
+- **실시간 호감도 & 상태 머신:** 쓰다듬기, 간식 주기 등 돌봄 액션(`CharacterCareLog`)에 따라 포만감과 애정도가 실시간으로 증감.
+- **성장형 해금 스토리:** 캐릭터 레벨업 및 친밀도 달성에 따라 캐릭터별 고유한 숨겨진 스토리 조각(`CharacterStoryFragment`) 순차적 언락.
+- **페르소나 유지 대화:** `pgvector` 기반 장기기억 RAG 검색과 SSE 스트리밍을 통해 끊김 없이 캐릭터와 일관된 페르소나로 대화.
 
-#### ◻ **JWT & Redis**
-> API Gateway 수준에서 JWT 토큰을 일괄 검증하며, 로그아웃 시 Redis 블랙리스트를 활용하여 세션을 안전하게 파기하고 보안을 강화했습니다.
+#### 💳 경제 시스템 및 인앱 상점
+- **별조각 순환 생태계:** 미션 성공, 출석, 공유를 통한 재화 획득과 인앱 상점에서의 소모 과정(`StarPieceTransaction`).
+- **아이템 및 스킨 인벤토리:** 획득한 별조각으로 돌봄용 소모성 아이템 구매 및 커스텀 스킨 장착 기능.
+- **PortOne 결제 연동:** 외부 결제 솔루션 API와 연동된 안전하고 멱등성 있는 캐시 결제 및 구매 내역 검증.
 
-#### ◻ **Spring Event & 비동기 처리**
-> 푸시 알림 발송이나 이벤트 로그 적재 등 메인 트랜잭션과 생명주기가 달라도 되는 서브 작업들은 `Spring ApplicationEventPublisher`를 활용해 관심사를 분리하고 비동기로 처리하여 API 응답 속도를 개선했습니다.
+#### 📣 푸시 알림 및 바이럴 공유 기능
+- **스마트 푸시 시스템:** 유저별 방해금지 시간(`NotificationSetting`)에 연동되어 최적의 타이밍에 발송되는 FCM 맞춤형 푸시 메시지.
+- **SNS 렌더링 공유:** S3 Presigned URL을 통해 미션 달성 증명 및 캐릭터 육성 상태를 카드 형태로 렌더링하고, 인스타그램 등 외부 SNS 공유 시 리워드(`ShareLog`)를 지급하는 바이럴 시스템.
 
-#### ◻ **Flyway (DB Migration)**
-> 마이크로서비스별 독립적인 데이터베이스 스키마(PostgreSQL)의 형상 관리를 위해 Flyway를 도입하여, CI/CD 파이프라인에서 스크립트 기반 자동 마이그레이션이 이루어지도록 구축했습니다.
-
----
-
-## 🚀 주요 기능
-
-#### 🔐 인증 및 보안
-- **소셜 로그인:** Google OAuth 2.0 연동을 통한 가입 및 토큰 기반(JWT) 인증
-- **중앙화 인가:** API Gateway의 `AuthInterceptor`를 통한 라우팅 전 선행 인가 처리
-
-#### 👾 캐릭터 육성
-- **다중 타입 지원:** NOVA, MUMU, JJORY 중 유저 성향에 맞는 캐릭터 선택 가능
-- **상태 머신:** 먹이, 휴식 등 돌봄 상호작용에 따른 포만감 및 애정도 실시간 증감 시스템
-
-#### 🎯 동적 미션 체계
-- **온보딩 연동:** 초기 라이프스타일 설문에 기반한 미션 난이도 및 주제 자동 배정
-- **상태 관리:** 미션 제안, 수락, 거절, 응답 제출 및 완료에 이르는 라이프사이클 처리
-
-#### 💳 상점 및 경제
-- **별조각 순환:** 획득(미션, 공유, 출석)부터 소비(아이템 및 스킨 구매)까지의 재화 생태계
-- **멱등성 구매:** 중복 결제 방지를 위한 결제 검증 로직 구현
-
-#### 📣 푸시 및 공유
-- **이미지 생성:** S3 Presigned URL을 발급받아 미션 완료 증명 카드를 SNS로 렌더링 후 공유
-- **스마트 알림:** 방해금지 시간 설정에 연동되는 FCM 기반 맞춤형 푸시 메시지 발송
-
-### 🌦️ 개인화 및 컨텍스트 (Personalization)
-- **날씨/지역 연동:** 유저가 설정한 날씨 권역 정보(`WeatherRegionCode`)를 바탕으로, 비가 오는 날엔 실내 활동을 제안하는 등 환경 맞춤형 특수 루틴 제안
-
-### 📜 행동 분석 로깅 (Event Logging)
-- **통합 로그 적재:** 미션 완료, 상점 구매 등 유저의 주요 행동 이벤트를 도메인 로직과 분리하여 비동기로 수집하고, `event-log` 모듈로 적재하여 향후 유저 리텐션 분석 및 지표 추출 기반 마련
-
----
-
-## 🗺 User Flow
-
-<p align="center">
-  <img src="docs/images/polaris_user_flow.png" width="80%" alt="Polaris User Flow">
-</p>
+#### 📜 행동 분석 통합 로깅
+- 미션 수행, 결제, 공유 등 유저의 주요 행동 이벤트를 도메인 로직과 완벽히 분리. 
+- 비동기로 수집된 이벤트를 `event-log` 모듈로 적재하여 향후 A/B 테스트 및 코호트 분석 기반 구축.
 
 ---
 
 ## 🖼 API 명세서
 
 <p align="center">
-  <img src="docs/images/API.png" width="100%" alt="API 명세서">
+  <img src="docs/images/API.png" width="80%" alt="API 명세서">
 </p>
 
 보다 자세한 API 명세서는
@@ -194,7 +175,7 @@
 ## 🗄 ERD Diagram
 
 <p align="center">
-  <img src="docs/images/ERD.png" width="100%" alt="ERD">
+  <img src="docs/images/ERD.png" width="80%" alt="ERD">
 </p>
 
 보다 자세한 ERD는
@@ -202,28 +183,24 @@
 
 ---
 
-## 📈 프로젝트 파일 구조
+## 📈 프로젝트 파일 구조 (멀티 모듈)
 
 ```text
 src/
-├── 📂 gateway              # REST API 진입점, JWT 글로벌 검증, gRPC 클라이언트 라우팅
-├── 📂 user                 # 회원 프로필, 온보딩, 지갑(별조각), 출석 기록 관리
+├── 📂 gateway              # REST API 진입점, JWT 글로벌 검증, gRPC 클라이언트 분산 라우팅
+├── 📂 user                 # 회원 온보딩, 지갑(별조각), PortOne 결제 처리 및 멱등성 검증 로직
 │   ├── 📂 core             # 인증/인가 인터페이스 및 공통 비즈니스 예외 처리
-│   ├── 📂 domain           # 비즈니스 핵심 영역 (엔티티, 애플리케이션 로직)
-│   │   ├── 📂 api          # 외부에서 호출하는 gRPC Controller 엔드포인트
-│   │   ├── 📂 application  # 서비스 로직 (Auth, Attendance, Wallet 등) 및 Event Listener
-│   │   ├── 📂 entity       # JPA 엔티티 (User, Wallet, OutboxEvent 등)
-│   │   └── 📂 repository   # 데이터 베이스 접근 계층 (Spring Data JPA)
-│   ├── 📂 infrastructure   # Google OAuth 연동 등 외부 API 구체 구현체
-│   └── 📂 resources        # application.yaml 및 Flyway DB 마이그레이션 스크립트
-├── 📂 character            # 캐릭터 상태, 돌봄 액션 기록, 스킨 장착, SNS 공유 정보
-├── 📂 mission              # 유저의 데일리 미션 상태 머신 및 완료 트랜잭션 관리
-├── 📂 item                 # 상점 인벤토리 및 소모성 아이템 사용 로직
-├── 📂 ai                   # Google Gemini 연동, 미션 프롬프트, 챗 스트리밍, 벡터 임베딩
-├── 📂 notification         # FCM 토큰 발급 및 시스템/개별 푸시 알림 발송
-├── 📂 event-log            # 로그 통합 적재 서버 (Elasticsearch 연동 등 대비)
-├── 📂 proto                # MSA 간 통신을 위한 Protocol Buffers 인터페이스 정의
-└── 📂 common               # 공통 Error Handler, Response DTO, 유틸리티 함수
+│   ├── 📂 domain           # 비즈니스 핵심 영역 (엔티티, Outbox Pattern 로직)
+│   ├── 📂 infrastructure   # 외부 API 구현체 및 Kafka Producer/Consumer 연동
+│   └── 📂 resources        # Flyway DB 마이그레이션 스크립트
+├── 📂 character            # 상태 머신 기반 돌봄 액션, 벡터 DB 쿼리, 장착형 스킨 비즈니스
+├── 📂 mission              # 유저 미션 라이프사이클 처리 및 AI 결과 피드백 보상 트랜잭션
+├── 📂 item                 # 상점 인벤토리 조회 및 소모성 아이템 동시성 제어 로직
+├── 📂 ai                   # Gemini 연동 프롬프트 엔지니어링, SSE 스트리밍 통신망 구현
+├── 📂 notification         # FCM 토큰 발급 및 카프카 이벤트 구독을 통한 스마트 푸시 발송
+├── 📂 event-log            # 통합 로그 비동기 적재 서버
+├── 📂 proto                # gRPC 통신을 위한 Protocol Buffers 인터페이스 중앙 집중형 관리
+└── 📂 common               # 공통 Error Handler, Response DTO, 유틸리티 로직 모음
 ```
 
 ---

@@ -2790,3 +2790,15 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 
 
 
+
+
+---
+
+## N. 신규 동기화된 엔드포인트 (Auto-extracted)
+
+| Method | Endpoint | 설명 | Request | Response | 인증 |
+|--------|----------|------|---------|----------|------|
+| GET | `/api/payment/v1/config` | (Auto-extracted from `PaymentController`) | | | |
+| POST | `/api/payment/v1/orders` | (Auto-extracted from `PaymentController`) | | | |
+| POST | `/api/payment/v1/completes` | (Auto-extracted from `PaymentController`) | | | |
+| GET | `/api/auth/v1/test/token` | (Auto-extracted from `TestTokenController`) | | | |

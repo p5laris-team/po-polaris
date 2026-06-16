@@ -1601,3 +1601,87 @@ unique(event_id)
 
 ---
 
+
+
+# 2. 신규 동기화된 모델 (Auto-extracted)
+
+
+---
+
+## 신규 추가 테이블: `user_item_purchase` (Class: `UserItemPurchase`)
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | Long | |
+| user_id | Long | |
+| user_item | UserItem | |
+| item_id | Long | |
+| quantity | int | |
+| price | int | |
+| star_piece | int | |
+| transaction_id | Long | |
+| idempotency_key | String | |
+
+
+---
+
+## 신규 추가 테이블: `user_item_usage` (Class: `UserItemUsage`)
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | Long | |
+| user_id | Long | |
+| user_item | UserItem | |
+| item_id | Long | |
+| ref_type | String | |
+| ref_id | Long | |
+| idempotency_key | String | |
+
+
+---
+
+## 신규 추가 테이블: `notification_push_delivery` (Class: `NotificationPushDelivery`)
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | Long | |
+| notification_id | Long | |
+| user_id | Long | |
+| fcm_device_token_id | Long | |
+| delivery_status | PushDeliveryStatus | |
+| fcm_message_id | String | |
+| error_code | String | |
+| error_message | String | |
+| attempted_at | LocalDateTime | |
+| next_attempt_at | LocalDateTime | |
+| attempt_count | int | |
+| sent_at | LocalDateTime | |
+| failed_at | LocalDateTime | |
+
+
+---
+
+## 신규 추가 테이블: `payment_order` (Class: `PaymentOrder`)
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | Long | |
+| user_id | Long | |
+| order_no | String | |
+| amount | int | |
+| star_pieces | int | |
+| status | PaymentStatus | |
+
+
+---
+
+## 신규 추가 테이블: `payment_transaction` (Class: `PaymentTransaction`)
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | Long | |
+| payment_order_id | Long | |
+| payment_id | String | |
+| pg_provider | String | |
+| pay_method | String | |
+| paid_at | LocalDateTime | |
