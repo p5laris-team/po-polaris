@@ -9,6 +9,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.generator.AiChatStreamChunk;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiChatResponse;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
@@ -36,6 +37,17 @@ public class SpringAiChatClient implements AiChatClient {
                 .user(userPrompt)
                 .call()
                 .content();
+    }
+
+    @Override
+    public AiChatResponse callWithUsage(String systemPrompt, String userPrompt) {
+        ChatResponse response = requireBuilder().build()
+                .prompt()
+                .system(systemPrompt)
+                .user(userPrompt)
+                .call()
+                .chatResponse();
+        return new AiChatResponse(extractText(response), extractTokenUsage(response));
     }
 
     @Override

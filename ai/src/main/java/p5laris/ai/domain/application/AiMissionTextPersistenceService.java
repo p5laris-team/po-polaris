@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.event.AiEventLogEvent;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.AiUsageLog;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
@@ -49,6 +50,7 @@ public class AiMissionTextPersistenceService {
             String provider,
             String model,
             int latencyMs,
+            AiTokenUsage tokenUsage,
             AiErrorType errorType
     ) {
         AiMissionGeneration generation = AiMissionGeneration.create(
@@ -73,6 +75,7 @@ public class AiMissionTextPersistenceService {
                 command.requestId(),
                 model,
                 latencyMs,
+                tokenUsage,
                 usageStatus,
                 errorType
         );

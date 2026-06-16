@@ -11,6 +11,10 @@ public interface AiChatClient {
 
     String call(String systemPrompt, String userPrompt);
 
+    default AiChatResponse callWithUsage(String systemPrompt, String userPrompt) {
+        return new AiChatResponse(call(systemPrompt, userPrompt), AiTokenUsage.empty());
+    }
+
     default Flux<String> stream(String systemPrompt, String userPrompt) {
         return Flux.just(call(systemPrompt, userPrompt));
     }

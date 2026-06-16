@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.MissionTextGenerator;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
 import p5laris.ai.domain.domain.enums.AiErrorType;
@@ -84,9 +86,12 @@ public class AiMissionTextService {
         AiUsageStatus usageStatus;
         boolean fallbackUsed;
         AiErrorType errorType = null;
+        AiTokenUsage tokenUsage = AiTokenUsage.empty();
 
         try {
-            candidate = missionTextGenerator.generate(command);
+            MissionTextGenerationOutput generationOutput = missionTextGenerator.generateWithUsage(command);
+            candidate = generationOutput.candidate();
+            tokenUsage = generationOutput.tokenUsage();
             missionTextValidationPolicy.validate(candidate, command.characterType());
             status = AiGenerationStatus.SUCCESS;
             usageStatus = AiUsageStatus.SUCCESS;
@@ -111,6 +116,7 @@ public class AiMissionTextService {
                 usageStatus,
                 fallbackUsed,
                 startedAt,
+                tokenUsage,
                 errorType
         );
 
@@ -208,6 +214,7 @@ public class AiMissionTextService {
             AiUsageStatus usageStatus,
             boolean fallbackUsed,
             long startedAt,
+            AiTokenUsage tokenUsage,
             AiErrorType errorType
     ) {
         try {
@@ -223,6 +230,7 @@ public class AiMissionTextService {
                     aiProviderProperties.getType(),
                     aiProviderProperties.resolvedModel(),
                     elapsedMillis(startedAt),
+                    tokenUsage,
                     errorType
             );
         } catch (DataIntegrityViolationException e) {
@@ -239,6 +247,7 @@ public class AiMissionTextService {
         source.put("userId", command.userId());
         source.put("characterId", command.characterId());
         source.put("characterType", command.characterType());
+        source.put("characterName", command.characterName());
         source.put("missionTemplateId", command.missionTemplateId());
         source.put("baseTitle", command.baseTitle());
         source.put("baseDescription", command.baseDescription());
@@ -257,6 +266,7 @@ public class AiMissionTextService {
     private String toRequestContextJson(MissionTextGenerationCommand command) {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("characterType", command.characterType());
+        context.put("characterName", command.characterName());
         context.put("baseTitle", command.baseTitle());
         context.put("baseDescription", command.baseDescription());
         context.put("category", command.category());
