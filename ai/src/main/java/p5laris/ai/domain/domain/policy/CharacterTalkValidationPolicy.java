@@ -123,6 +123,7 @@ public class CharacterTalkValidationPolicy {
                 || character == '?'
                 || character == '!'
                 || character == '…'
+                || character == 'ㅠ'
                 || Character.isWhitespace(character);
     }
 

@@ -5,18 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
 import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
-import p5laris.ai.domain.application.generator.AiRateLimiter;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.generator.CharacterTalkGenerator;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
 import p5laris.ai.domain.domain.enums.AiErrorType;
-import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.domain.policy.CharacterTalkValidationPolicy;
 import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 import p5laris.ai.domain.exception.FallbackRequiredException;
-import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
-import p5laris.ai.domain.infrastructure.provider.AiProviderCircuitBreaker;
-import p5laris.ai.domain.infrastructure.provider.GeminiCharacterTalkGenerator;
 
 import java.util.Locale;
 
@@ -31,10 +27,23 @@ import java.util.Locale;
 @Slf4j
 public class AiCharacterTalkService {
 
-    private final AiProviderProperties aiProviderProperties;
-    private final AiRateLimiter aiRateLimiter;
-    private final AiProviderCircuitBreaker aiProviderCircuitBreaker;
-    private final GeminiCharacterTalkGenerator geminiCharacterTalkGenerator;
+    private static final String[] MUMU_POSITIVE_FALLBACK_REPLIES = {
+            "무! 무무! (해석: 헤헤, 그 말 좋다. 나 지금 조금 신났어.)",
+            "무무! 무우! (해석: 좋아, 이건 같이 기뻐해야 하는 일이지. 더 말해줘.)",
+            "무! 무무무! (해석: 칭찬 들으니까 나도 힘이 난다. 너도 오늘 꽤 멋졌어.)"
+    };
+    private static final String[] MUMU_SOFT_FALLBACK_REPLIES = {
+            "무무 ㅠㅠ... (해석: 오늘 많이 버거웠구나. 나 지금 네 편에서 듣고 있어.)",
+            "무우...? 무무 ㅠㅠ (해석: 그건 마음이 좀 다쳤겠다. 천천히 말해줘도 돼.)",
+            "무... ㅠ 무무. (해석: 억지로 괜찮은 척 안 해도 돼. 나 여기 있어.)"
+    };
+    private static final String[] MUMU_NEUTRAL_FALLBACK_REPLIES = {
+            "무우...? 무무. (해석: 응, 나 듣고 있어. 방금 말 조금 더 들려줘.)",
+            "무...? 무! (해석: 나 불렀어? 여기 있어. 오늘은 어떤 얘기부터 할까?)",
+            "무무. 무우...? (해석: 좋아, 천천히 이어가자. 지금 제일 먼저 떠오른 말이 뭐야?)"
+    };
+
+    private final CharacterTalkGenerator characterTalkGenerator;
     private final CharacterTalkValidationPolicy characterTalkValidationPolicy;
     private final CharacterTalkHistoryService characterTalkHistoryService;
 
@@ -79,26 +88,10 @@ public class AiCharacterTalkService {
     }
 
     private AiTokenUsage streamReply(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
-        AiProviderType providerType = aiProviderProperties.providerType();
-        if (!aiProviderProperties.isExternalEnabled()) {
-            throw new FallbackRequiredException(AiErrorType.PROVIDER_ERROR, "외부 AI provider가 비활성화되어 있습니다.");
-        }
-        if (providerType != AiProviderType.GEMINI) {
-            throw new FallbackRequiredException(AiErrorType.PROVIDER_ERROR, "지원하지 않는 별친구 대화 provider입니다.");
-        }
-
-        aiRateLimiter.checkAllowed(command.userId(), providerType, aiProviderProperties.resolvedModel());
-        return aiProviderCircuitBreaker.execute(
-                providerType,
-                aiProviderProperties.resolvedModel(),
-                command.requestId(),
-                () -> {
-                    StreamingReplyGuard guard = new StreamingReplyGuard(command, emitter);
-                    AiTokenUsage tokenUsage = geminiCharacterTalkGenerator.stream(command, guard::accept);
-                    guard.finish();
-                    return tokenUsage;
-                }
-        );
+        StreamingReplyGuard guard = new StreamingReplyGuard(command, emitter);
+        AiTokenUsage tokenUsage = characterTalkGenerator.stream(command, guard::accept);
+        guard.finish();
+        return tokenUsage;
     }
 
     private void validateRequest(CharacterTalkGenerationCommand command) {
@@ -113,11 +106,45 @@ public class AiCharacterTalkService {
 
     private String fallbackReply(CharacterTalkGenerationCommand command) {
         return switch (normalize(command.characterType())) {
-            case "MUMU" -> "무... 무무. (해석: 무무가 지금은 아주 작게 숨을 고르고, 곁에 같이 있어도 괜찮다고 하는 것 같아요.)";
-            case "NOVA" -> "지금 마음이 조금 흐려도 괜찮아. 작은 숨 하나부터 다시 좌표를 잡아보자.";
-            case "JJORY" -> "오늘은 잠깐 멈춰도 됨. 지도 접는 것도 작전임. 다시 펼치면 됨.";
-            default -> "별친구가 지금 곁에서 천천히 들어주고 있어요. 오늘은 아주 작게 시작해도 괜찮아요.";
+            case "MUMU" -> mumuFallbackReply(command);
+            case "NOVA" -> "지금 말이 조금 흐려져도 괜찮아. 내가 여기서 천천히 같이 짚어볼게.";
+            case "JJORY" -> "지금은 급히 작전 짤 필요 없음. 일단 여기 앉아서 네 말부터 들어볼게.";
+            default -> "별친구가 여기서 천천히 들어줄게요. 지금 말부터 편하게 이어가도 괜찮아요.";
         };
+    }
+
+    private String mumuFallbackReply(CharacterTalkGenerationCommand command) {
+        String message = normalizeForKeyword(command.userMessage());
+        if (containsAny(message, "좋", "기쁘", "신나", "행복", "성공", "합격", "해냈", "잘했", "칭찬", "최고", "예쁘", "사랑", "고마", "대박")) {
+            return pickMumuFallback(command, MUMU_POSITIVE_FALLBACK_REPLIES);
+        }
+        if (containsAny(message, "힘들", "피곤", "지쳤", "우울", "슬프", "외롭", "짜증", "화나", "싫", "불안", "망했", "아파", "눈물", "울", "빡")) {
+            return pickMumuFallback(command, MUMU_SOFT_FALLBACK_REPLIES);
+        }
+        return pickMumuFallback(command, MUMU_NEUTRAL_FALLBACK_REPLIES);
+    }
+
+    private String pickMumuFallback(CharacterTalkGenerationCommand command, String[] candidates) {
+        String seed = safeText(command.userMessage()) + "|" + safeText(command.requestId());
+        int index = Math.floorMod(seed.hashCode(), candidates.length);
+        return candidates[index];
+    }
+
+    private boolean containsAny(String value, String... keywords) {
+        for (String keyword : keywords) {
+            if (value.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeForKeyword(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void completeWithFallback(
@@ -140,6 +167,24 @@ public class AiCharacterTalkService {
         return value.trim().toUpperCase(Locale.ROOT);
     }
 
+    private String displayCharacterName(String characterName) {
+        if (characterName == null || characterName.isBlank()) {
+            return "무무";
+        }
+        return characterName.trim();
+    }
+
+    private String subjectParticle(String value) {
+        if (value.isBlank()) {
+            return "가";
+        }
+        char last = value.charAt(value.length() - 1);
+        if (last < '가' || last > '힣') {
+            return "가";
+        }
+        return (last - '가') % 28 == 0 ? "가" : "이";
+    }
+
     private boolean isNotPositive(Long value) {
         return value == null || value <= 0;
     }
@@ -155,6 +200,7 @@ public class AiCharacterTalkService {
         private final StringBuilder accumulatedReply = new StringBuilder();
         private final StringBuilder mumuBuffer = new StringBuilder();
         private final boolean mumu;
+        private int mumuEmittedLength;
         private boolean mumuReleased;
 
         private StreamingReplyGuard(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
@@ -194,13 +240,44 @@ public class AiCharacterTalkService {
                             "무무 대화 응답에 해석 라벨이 너무 늦게 등장했습니다."
                     );
                 }
+                emitSafeMumuUtterancePrefix(buffered);
                 return;
             }
 
             validateMumuUtterancePrefix(buffered.substring(0, interpretationStart).trim());
             mumuReleased = true;
-            emitter.emitDelta(buffered);
+            emitMumuDelta(buffered.substring(mumuEmittedLength));
+            mumuEmittedLength = buffered.length();
             mumuBuffer.setLength(0);
+        }
+
+        private void emitSafeMumuUtterancePrefix(String buffered) {
+            int safeBoundary = buffered.length() - trailingInterpretationMarkerPrefixLength(buffered);
+            if (safeBoundary <= mumuEmittedLength) {
+                return;
+            }
+
+            String safePrefix = buffered.substring(0, safeBoundary);
+            validateMumuUtterancePrefix(safePrefix.trim());
+            emitMumuDelta(buffered.substring(mumuEmittedLength, safeBoundary));
+            mumuEmittedLength = safeBoundary;
+        }
+
+        private int trailingInterpretationMarkerPrefixLength(String value) {
+            String marker = "(해석:";
+            int maxLength = Math.min(marker.length() - 1, value.length());
+            for (int length = maxLength; length > 0; length--) {
+                if (marker.startsWith(value.substring(value.length() - length))) {
+                    return length;
+                }
+            }
+            return 0;
+        }
+
+        private void emitMumuDelta(String text) {
+            if (text != null && !text.isBlank()) {
+                emitter.emitDelta(useMumuCharacterName(text, command.characterName()));
+            }
         }
 
         private void finish() {
@@ -233,8 +310,17 @@ public class AiCharacterTalkService {
                     || character == '?'
                     || character == '!'
                     || character == '…'
+                    || character == 'ㅠ'
                     || Character.isWhitespace(character);
         }
+    }
+
+    private String useMumuCharacterName(String value, String characterName) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        String name = displayCharacterName(characterName);
+        return value.replace("무무가", name + subjectParticle(name));
     }
 
     private static class RecordingCharacterTalkStreamEmitter implements CharacterTalkStreamEmitter {
