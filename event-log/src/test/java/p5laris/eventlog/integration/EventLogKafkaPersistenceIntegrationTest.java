@@ -1,14 +1,22 @@
 package p5laris.eventlog.integration;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.test.utils.KafkaTestUtils;
 import p5laris.eventlog.domain.domain.entity.EventLog;
 import p5laris.eventlog.domain.domain.repository.EventLogRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -61,5 +69,42 @@ class EventLogKafkaPersistenceIntegrationTest extends EventLogIntegrationTestCon
         assertThat(eventLog.getRefId()).isEqualTo(2001L);
         assertThat(eventLog.getPropertiesJson().get("amount").asInt()).isEqualTo(4900);
         assertThat(eventLog.getPropertiesJson().get("currency").asText()).isEqualTo("KRW");
+    }
+
+    @Test
+    void invalidPayload_isPublishedToDeadLetterTopicWithoutPersisting() {
+        String idempotencyKey = "invalid-user-event-" + UUID.randomUUID();
+
+        try (Consumer<String, byte[]> consumer = createConsumer("user-event-logs.DLT")) {
+            kafkaTemplate.send("user-event-logs", idempotencyKey, "not-a-valid-event-log");
+            kafkaTemplate.flush();
+
+            ConsumerRecord<String, byte[]> record = KafkaTestUtils.getSingleRecord(
+                    consumer,
+                    "user-event-logs.DLT",
+                    Duration.ofSeconds(15)
+            );
+
+            assertThat(record.key()).isEqualTo(idempotencyKey);
+            assertThat(new String(record.value(), StandardCharsets.UTF_8))
+                    .contains("not-a-valid-event-log");
+            assertThat(eventLogRepository.count()).isZero();
+        }
+    }
+
+    private Consumer<String, byte[]> createConsumer(String topic) {
+        Map<String, Object> properties = KafkaTestUtils.consumerProps(
+                KAFKA.getBootstrapServers(),
+                "event-log-dlt-" + UUID.randomUUID(),
+                "false"
+        );
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+
+        Consumer<String, byte[]> consumer =
+                new DefaultKafkaConsumerFactory<String, byte[]>(properties).createConsumer();
+        consumer.subscribe(List.of(topic));
+        return consumer;
     }
 }
